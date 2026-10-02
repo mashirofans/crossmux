@@ -162,8 +162,8 @@ class SdCardFont {
   void resetStats();
   const Stats& getStats() const { return stats_; }
 
-  // Content hash of the file header + style TOC entries (computed during load).
-  // Used to generate deterministic font IDs for section cache invalidation.
+  // CRC32 of the complete .cpfont file (computed during load), used to
+  // generate deterministic font IDs and invalidate sections when glyph bytes change.
   uint32_t contentHash() const { return contentHash_; }
 
  private:

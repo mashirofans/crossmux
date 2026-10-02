@@ -296,6 +296,15 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // cheaper path.
   enum IMAGE_SCALING { IMAGE_SCALING_NEAREST = 0, IMAGE_SCALING_BILINEAR = 1, IMAGE_SCALING_COUNT };
 
+  // Use a finer ordered dither when reducing 8-bit image samples to the
+  // panel's four reader gray levels. This keeps the historical Bayer path as
+  // the default and is intentionally reader-scoped.
+  enum IMAGE_GRAYSCALE_SIMULATION {
+    IMAGE_GRAYSCALE_OFF = 0,
+    IMAGE_GRAYSCALE_256 = 1,
+    IMAGE_GRAYSCALE_SIMULATION_COUNT
+  };
+
   enum QUICK_RESUME_SLEEP_SCREEN {
     QUICK_RESUME_NEVER = 0,
     QUICK_RESUME_AFTER_TIMEOUT = 1,
@@ -453,6 +462,12 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // Image resampling inside the reader (see IMAGE_SCALING). Applies to inline
   // book images only; reader chrome and other activities are untouched.
   uint8_t imageScaling = IMAGE_SCALING_NEAREST;
+  // Simulate 256 input gray levels through a higher-resolution 4-level dither.
+  // Default is off to preserve the existing image rendering and cache files.
+  uint8_t imageGrayscaleSimulation = IMAGE_GRAYSCALE_OFF;
+  // Apply the reader's two-plane text AA pipeline to list/menu UI frames.
+  // Disabled by default because it roughly triples menu drawing work.
+  uint8_t uiAntiAliasing = 0;
   // SD card font family name (empty = use built-in fontFamily)
   char sdFontFamilyName[32] = "";
   // Prefer the internal Flash cache for the selected SD reader font.

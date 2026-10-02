@@ -2992,6 +2992,7 @@ void CrossPointWebServer::handleFontUploadData() {
       fontUpload.file = HalFile();
       fontUpload.familyName.clear();
       fontUpload.filePath.clear();
+      fontUpload.finalPath.clear();
       fontUpload.valid = false;
       fontUpload.magicChecked = false;
       fontUpload.bytesWritten = 0;
@@ -3036,10 +3037,20 @@ void CrossPointWebServer::handleFontUploadData() {
 
       char path[128];
       FontInstaller::buildFontPath(family.c_str(), filename.c_str(), path, sizeof(path));
-      fontUpload.filePath = path;
+      fontUpload.finalPath = path;
+      fontUpload.filePath = fontUpload.finalPath + ".tmp";
+      if (fontUpload.filePath.size() >= 128) {
+        LOG_ERR("WEB", "Font upload path too long: %s", fontUpload.finalPath.c_str());
+        fontUpload.filePath.clear();
+        fontUpload.finalPath.clear();
+        break;
+      }
+      // Never expose a partially written .cpfont to the registry or reader.
+      // A stale interrupted upload is safe to discard before opening the temp.
+      Storage.remove(fontUpload.filePath.c_str());
 
-      if (!Storage.openFileForWrite("WEB", path, fontUpload.file)) {
-        LOG_ERR("WEB", "Failed to open font file for write: %s", path);
+      if (!Storage.openFileForWrite("WEB", fontUpload.filePath.c_str(), fontUpload.file)) {
+        LOG_ERR("WEB", "Failed to open font file for write: %s", fontUpload.filePath.c_str());
         fontUpload.buffer.reset();
         break;
       }
@@ -3104,6 +3115,14 @@ void CrossPointWebServer::handleFontUploadData() {
       fontUpload.bufferPos = 0;
       fontUpload.buffer.reset();
 
+      if (fontUpload.valid && !fontUpload.filePath.empty() && !fontUpload.finalPath.empty()) {
+        if (!Storage.replaceFile(fontUpload.filePath.c_str(), fontUpload.finalPath.c_str())) {
+          LOG_ERR("WEB", "Failed to publish font file: %s", fontUpload.finalPath.c_str());
+          fontUpload.valid = false;
+        } else {
+          fontUpload.filePath = fontUpload.finalPath;
+        }
+      }
       if (!fontUpload.valid && !fontUpload.filePath.empty()) {
         Storage.remove(fontUpload.filePath.c_str());
       }
@@ -3122,6 +3141,7 @@ void CrossPointWebServer::handleFontUploadData() {
         Storage.remove(fontUpload.filePath.c_str());
       }
       fontUpload.valid = false;
+      fontUpload.finalPath.clear();
       LOG_DBG("WEB", "Font upload aborted");
       break;
     }

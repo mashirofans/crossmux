@@ -756,24 +756,26 @@ does not modify `otadata`. A normal online or SD-card OTA erases and overwrites
 it. The current 0x640000-byte OTA slots reserve the first 4096 bytes for the
 cache header, leaving at most 6,549,504 bytes for one `.cpfont` payload.
 
-Header version 1 is a fixed 156-byte little-endian record at slot offset 0:
+Header version 2 is a fixed 156-byte little-endian record at slot offset 0.
+Version 1 caches are rejected and rebuilt because `contentHash` now identifies
+the complete `.cpfont` payload rather than only its metadata prefix.
 
 | Offset | Field |
 |---:|---|
 | 0 | `uint8 magic[8]` = `CPSDFC1\0` |
-| 8 | `uint16 version` = 1 |
+| 8 | `uint16 version` = 2 |
 | 10 | `uint16 headerSize` = 156 |
 | 12 | `uint32 payloadSize` |
-| 16 | `uint32 contentHash` (FNV-1a of the `.cpfont` header and style TOC) |
+| 16 | `uint32 contentHash` (CRC-32 of the complete `.cpfont` payload) |
 | 20 | `uint32 payloadCrc` |
 | 24 | `uint32 headerCrc` (CRC-32 with this field zeroed) |
 | 28 | NUL-terminated `char sourcePath[128]` |
 
 The `.cpfont` bytes start at offset 4096. A writer first erases the header,
 writes and CRC-verifies the complete payload, then commits the header last.
-Startup validates the header, source path and size, content hash, and normal
-`.cpfont` structure; it deliberately does not rescan the complete payload CRC.
-Any Flash read failure immediately falls back to the SD source.
+Startup validates the header, source path and size, complete-payload identity,
+and normal `.cpfont` structure. Any Flash read failure immediately falls back
+to the SD source.
 
 The legacy `CPOTAF1\0` Magic is rejected even when its header CRC is valid, so
 older caches safely fall back to SD and are rebuilt through the normal

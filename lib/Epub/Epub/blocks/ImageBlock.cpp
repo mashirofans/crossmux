@@ -28,6 +28,7 @@ ImageBlock::ExtractFn ImageBlock::extractFn = nullptr;
 // application's settings, so the reader pushes this in (same pattern as
 // setExtractor()) and the decode path reads it here.
 bool ImageBlock::bilinearScaling = false;
+bool ImageBlock::grayscaleSimulation = false;
 
 void ImageBlock::setExtractor(void* ctx, ExtractFn fn) {
   extractCtx = ctx;
@@ -44,15 +45,24 @@ void ImageBlock::setBilinearScaling(const bool enabled) {
           enabled ? ".b.pxc" : ".pxc");
 }
 
+void ImageBlock::setGrayscaleSimulation(const bool enabled) {
+  if (grayscaleSimulation == enabled) return;
+  grayscaleSimulation = enabled;
+  LOG_INF("IMG", "Image grayscale simulation -> %s", enabled ? "on" : "off");
+}
+
 bool ImageBlock::imageExists() const { return Storage.exists(imagePath.c_str()); }
 
 namespace {
 
 std::string getCachePath(const std::string& imagePath) {
-  // Replace extension with .pxc (pixel cache). The resampling filter is part of
-  // the cache identity: the cached file holds already-scaled pixels, so a
-  // nearest-decoded cache must not be served after switching to bilinear.
-  const char* suffix = ImageBlock::bilinearScalingEnabled() ? ".b.pxc" : ".pxc";
+  // Replace extension with a mode-specific .pxc (pixel cache). The resampling
+  // filter and grayscale simulation are part of the cache identity: cached
+  // pixels must not be reused after either setting changes.
+  const bool bilinear = ImageBlock::bilinearScalingEnabled();
+  const bool highQuality = ImageBlock::grayscaleSimulationEnabled();
+  const char* suffix = bilinear ? (highQuality ? ".b.hq.pxc" : ".b.pxc")
+                                : (highQuality ? ".hq.pxc" : ".pxc");
   const size_t dotPos = imagePath.rfind('.');
   if (dotPos != std::string::npos) {
     return imagePath.substr(0, dotPos) + suffix;
@@ -465,6 +475,7 @@ bool ImageBlock::renderInternal(GfxRenderer& renderer, const int x, const int y,
   config.cachePath = cachePath;      // Enable caching during decode
   config.output = output;
   config.bilinearScaling = bilinearScalingEnabled();
+  config.highQualityDithering = grayscaleSimulationEnabled();
 
   ImageToFramebufferDecoder* decoder = ImageDecoderFactory::getDecoder(imagePath);
   if (!decoder) {

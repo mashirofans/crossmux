@@ -22,8 +22,6 @@ constexpr size_t MAX_PAYLOAD_SIZE = 6549504;
 constexpr size_t CPFONT_HEADER_SIZE = 32;
 constexpr size_t CPFONT_TOC_ENTRY_SIZE = 32;
 constexpr uint8_t CPFONT_MAGIC[8] = {'C', 'P', 'F', 'O', 'N', 'T', '\0', '\0'};
-constexpr uint32_t FNV_OFFSET = 2166136261u;
-constexpr uint32_t FNV_PRIME = 16777619u;
 
 struct SourceIdentity {
   size_t size = 0;
@@ -31,14 +29,6 @@ struct SourceIdentity {
 };
 
 uint16_t readU16(const uint8_t* data) { return static_cast<uint16_t>(data[0]) | static_cast<uint16_t>(data[1] << 8); }
-
-uint32_t fnv1a(const uint8_t* data, size_t length, uint32_t hash = FNV_OFFSET) {
-  for (size_t i = 0; i < length; ++i) {
-    hash ^= data[i];
-    hash *= FNV_PRIME;
-  }
-  return hash;
-}
 
 bool identifySource(const char* sourcePath, SourceIdentity& identity) {
   if (!sourcePath || strlen(sourcePath) >= sizeof(Header{}.sourcePath)) return false;
@@ -54,15 +44,30 @@ bool identifySource(const char* sourcePath, SourceIdentity& identity) {
   }
 
   const uint8_t styleCount = data[12];
-  uint32_t hash = fnv1a(data, sizeof(data));
+  uint32_t crc = UINT32_MAX;
+  crc = sd_card_font_cache_format::crc32Update(crc, data, sizeof(data));
   for (uint8_t i = 0; i < styleCount; ++i) {
     if (file.read(data, CPFONT_TOC_ENTRY_SIZE) != static_cast<int>(CPFONT_TOC_ENTRY_SIZE)) return false;
-    hash = fnv1a(data, CPFONT_TOC_ENTRY_SIZE, hash);
+    crc = sd_card_font_cache_format::crc32Update(crc, data, CPFONT_TOC_ENTRY_SIZE);
   }
 
   identity.size = file.fileSize();
-  identity.contentHash = hash;
-  return identity.size >= CPFONT_HEADER_SIZE + static_cast<size_t>(styleCount) * CPFONT_TOC_ENTRY_SIZE;
+  if (identity.size < CPFONT_HEADER_SIZE + static_cast<size_t>(styleCount) * CPFONT_TOC_ENTRY_SIZE) return false;
+
+  // Metadata-only fingerprints are insufficient when a rebuilt font keeps the
+  // same glyph counts/metrics but changes bitmap bytes. Hash the complete file
+  // so an OTA cache can never silently serve the previous payload.
+  constexpr size_t HASH_CHUNK_SIZE = 1024;
+  uint8_t chunk[HASH_CHUNK_SIZE];
+  size_t offset = CPFONT_HEADER_SIZE + static_cast<size_t>(styleCount) * CPFONT_TOC_ENTRY_SIZE;
+  while (offset < identity.size) {
+    const size_t length = std::min(HASH_CHUNK_SIZE, identity.size - offset);
+    if (file.read(chunk, length) != static_cast<int>(length)) return false;
+    crc = sd_card_font_cache_format::crc32Update(crc, chunk, length);
+    offset += length;
+  }
+  identity.contentHash = crc ^ UINT32_MAX;
+  return true;
 }
 
 bool readHeader(const HalOtaSlot& slot, Header& header) {

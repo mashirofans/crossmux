@@ -11,6 +11,7 @@
 #include "ReaderUtils.h"
 #include "components/UITheme.h"
 #include "components/themes/lyra/LyraTheme.h"
+#include "util/UiAntiAliasedRender.h"
 
 namespace fui = freeink::ui;
 
@@ -220,11 +221,12 @@ void EpubReaderMenuActivity::drawChrome() {
 void EpubReaderMenuActivity::render(RenderLock&&) {
   if (optionPopup.processRender(renderer, mappedInput)) return;
 
-  renderer.clearScreen();
-  drawChrome();
-
-  renderUi();
-
-  drawFooter();
-  renderer.displayBuffer();
+  const auto drawFrame = [&] {
+    renderer.clearScreen();
+    drawChrome();
+    renderUi();
+    drawFooter();
+  };
+  drawFrame();
+  uiAa::display(renderer, drawFrame);
 }

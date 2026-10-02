@@ -32,16 +32,16 @@ static_assert(sizeof(EpdLigaturePair) == 8, "EpdLigaturePair must be 8 bytes to 
 
 namespace {
 
-// FNV-1a hash for content-based font ID generation
-constexpr uint32_t FNV_OFFSET = 2166136261u;
-constexpr uint32_t FNV_PRIME = 16777619u;
-
-uint32_t fnv1a(const uint8_t* data, size_t len, uint32_t hash = FNV_OFFSET) {
-  for (size_t i = 0; i < len; i++) {
-    hash ^= data[i];
-    hash *= FNV_PRIME;
+// Complete-file CRC used for both renderer font IDs and the optional Flash
+// payload cache identity. Header/TOC-only hashes let a rebuilt font retain an
+// old section cache when only glyph bitmap bytes changed.
+uint32_t crc32Update(uint32_t crc, const void* data, const size_t length) {
+  const auto* bytes = static_cast<const uint8_t*>(data);
+  for (size_t i = 0; i < length; ++i) {
+    crc ^= bytes[i];
+    for (uint8_t bit = 0; bit < 8; ++bit) crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
   }
-  return hash;
+  return crc;
 }
 
 // .cpfont magic bytes
@@ -107,6 +107,11 @@ class FontFile {
     const int read = sd_.read(data, length);
     if (read > 0) position_ += static_cast<size_t>(read);
     return read;
+  }
+
+  size_t size() {
+    if (flash_) return flashPayloadSize_;
+    return openSd() ? sd_.size() : 0;
   }
 
   bool close() {
@@ -755,9 +760,6 @@ bool SdCardFont::loadSelectedSource() {
     return false;
   }
 
-  // Begin content hash: accumulate global header
-  uint32_t hash = fnv1a(headerBuf, HEADER_SIZE);
-
   bool is2Bit = (readU16(headerBuf + 10) & 1) != 0;
 
   uint8_t styleCount = headerBuf[12];
@@ -774,9 +776,6 @@ bool SdCardFont::loadSelectedSource() {
       freeAll();
       return false;
     }
-
-    // Accumulate TOC entry into content hash
-    hash = fnv1a(tocBuf, STYLE_TOC_ENTRY_SIZE, hash);
 
     uint8_t styleId = tocBuf[0];
     if (styleId >= MAX_STYLES) {
@@ -819,8 +818,31 @@ bool SdCardFont::loadSelectedSource() {
     computeStyleFileOffsets(s, dataOffset);
   }
 
+  // Compute the identity from every byte, not just the metadata prefix. This
+  // keeps renderer section caches and the Flash payload cache coherent when a
+  // rebuilt font changes outlines/bitmaps without changing its metrics.
+  constexpr size_t HASH_CHUNK_SIZE = 1024;
+  uint8_t hashChunk[HASH_CHUNK_SIZE];
+  uint32_t crc = UINT32_MAX;
+  const size_t fileSize = file.size();
+  if (fileSize == 0 || !file.seekSet(0)) {
+    LOG_ERR("SDCF", "Failed to rewind font for content hash");
+    freeAll();
+    return false;
+  }
+  size_t hashOffset = 0;
+  while (hashOffset < fileSize) {
+    const size_t length = std::min(HASH_CHUNK_SIZE, fileSize - hashOffset);
+    if (file.read(hashChunk, length) != static_cast<int>(length)) {
+      LOG_ERR("SDCF", "Failed to hash font payload at %u", static_cast<unsigned>(hashOffset));
+      freeAll();
+      return false;
+    }
+    crc = crc32Update(crc, hashChunk, length);
+    hashOffset += length;
+  }
+  contentHash_ = crc ^ UINT32_MAX;
   styleCount_ = styleCount;
-  contentHash_ = hash;
 
   // Load full intervals into RAM for each present style. BMP-only fonts with
   // fewer than 65536 glyphs use a compact 6-byte interval table instead of the

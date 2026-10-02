@@ -84,9 +84,13 @@ class TtfEpdFont {
   // transitions (WiFi + web server, image decode, dictionary, sleep).
   void releaseResidentCaches();
 
-  // Optional batch pre-warm of the REGULAR face (other styles fault lazily).
+  // Optional batch pre-warm. The one-argument forms retain the historical
+  // regular-face-only behavior used during font initialization; the style-mask
+  // forms let the reader scan warm the exact bold/italic faces it will draw.
   bool build(const char* utf8);
+  bool build(const char* utf8, uint8_t styleMask);
   bool addCoverage(const char* utf8);
+  bool addCoverage(const char* utf8, uint8_t styleMask);
 
  private:
   // A borrowed source file (one per style role that the caller supplies).

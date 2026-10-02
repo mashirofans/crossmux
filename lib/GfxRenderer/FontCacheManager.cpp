@@ -79,14 +79,16 @@ void FontCacheManager::prewarmCache(int fontId, const char* utf8Text, uint8_t st
   // funnels through (reader endScanAndPrewarm, the settings preview, UI text),
   // so building here covers them all. accumulate=false means "this is the whole
   // glyph set for this render" → replace; accumulate=true → add incrementally.
-  // styleMask is ignored: a TTF face has no synthesized bold/italic here.
+  // TTF faces can synthesize or load all four style slots, so honor styleMask
+  // instead of warming only regular text and faulting bold/italic from SD while
+  // the page is already being drawn.
 #if CROSSPOINT_VECTOR_FONTS
   auto tit = ttfFonts_.find(fontId);
   if (tit != ttfFonts_.end() && tit->second) {
     if (accumulate) {
-      tit->second->addCoverage(utf8Text);
+      tit->second->addCoverage(utf8Text, styleMask);
     } else {
-      tit->second->build(utf8Text);
+      tit->second->build(utf8Text, styleMask);
     }
     return;
   }
@@ -135,6 +137,9 @@ bool FontCacheManager::canIdlePrewarm(const int fontId) const { return sdCardFon
 
 bool FontCacheManager::needsPrewarmScan(const int fontId) const {
   if (sdCardFonts_.count(fontId) != 0) return true;
+#if CROSSPOINT_VECTOR_FONTS
+  if (ttfFonts_.count(fontId) != 0) return true;
+#endif
 
   const auto family = fontMap_.find(fontId);
   if (family == fontMap_.end()) return false;

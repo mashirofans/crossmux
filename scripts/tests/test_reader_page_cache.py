@@ -128,7 +128,7 @@ struct EpubReaderActivity {
   ReaderPageCache pageCache_[kPageCacheSlots];
   int pageCacheLiveSlot_=0;
   ReaderPageCacheKey renderedPageKey_;
-  uint32_t sectionGeneration_=1,renderEpoch_=1,pageCacheMissingCodepoint_=0;
+  uint32_t sectionGeneration_=1,renderEpoch_=1,pageCacheMissingCodepoint_[kPageCacheSlots]{};
   int currentSpineIndex=2;
   bool pageCacheFailed_=false;
   enum class Overlay {None,Menu}; Overlay overlay=Overlay::None;
@@ -164,7 +164,7 @@ int main() {
     for(const auto& slot:r.pageCache_) assert(slot.state==ReaderPageCache::State::Ready);
     assert(r.pageCache_[1].key.page==r.section->currentPage-1);
     assert(r.renderer.frame==original && r.renderer.mode==GfxRenderer::BW);
-    assert(r.pageCacheMissingCodepoint_==0x4E00);
+    assert(r.pageCacheMissingCodepoint_[0]==0x4E00);
     assert(memory::live==8 && memory::allocations==8);
     for(int slot=0;slot<r.kPageCacheSlots;++slot)
       assert(r.pageCacheBase_[slot].get()[0]==1 && r.pageCacheLsb_[slot].get()[0]==2 && r.pageCacheMsb_[slot].get()[0]==3);
@@ -223,10 +223,12 @@ int main() {
   {EpubReaderActivity r; activityManager.cancelled=true; r.renderIdle(0); assert(r.section->loads==0);}
   reset();
   {EpubReaderActivity r; r.section->cancelOnLoad=true; r.renderIdle(0); assert(memory::allocations==0);}
-  for(int fail=1;fail<=8;++fail) {
+  // Slot 0 allocation failure disables the cache; slot 1 is allowed to fail
+  // independently so an already-built forward cache remains usable.
+  for(int fail=1;fail<=4;++fail) {
     reset(); EpubReaderActivity r; memory::failAt=fail; r.renderIdle(0);
     assert(r.pageCacheFailed_ && memory::live==0 && !r.pageCacheEligible());
-    r.renderIdle(0); assert(r.section->loads==(fail<=4 ? 1 : 2));
+    r.renderIdle(0); assert(r.section->loads==1);
   }
   reset();
   {EpubReaderActivity r; memory::headroom=false; r.renderIdle(0); assert(r.pageCacheFailed_ && memory::live==0);}

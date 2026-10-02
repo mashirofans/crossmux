@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <optional>
 
+#include "CrossPointSettings.h"
 #include "Epub/blocks/ImageBlock.h"
 #include "Epub/converters/JpegToFramebufferConverter.h"
 #include "components/themes/BaseTheme.h"
@@ -19,7 +20,7 @@ namespace {
 bool renderBmpPass(const GfxRenderer& renderer, const Rect& bounds, const SelectedImage& selected) {
   HalFile file;
   if (!Storage.openFileForRead("AIRP", selected.path, file)) return false;
-  Bitmap bitmap(file, /*dithering=*/false);
+  Bitmap bitmap(file, SETTINGS.imageGrayscaleSimulation == CrossPointSettings::IMAGE_GRAYSCALE_256);
   if (bitmap.parseHeaders() != BmpReaderError::Ok) return false;
   if (bitmap.getWidth() != selected.image.width || bitmap.getHeight() != selected.image.height) return false;
 
@@ -66,6 +67,8 @@ Rect AirPageImageRenderer::fittedBounds(const Rect& viewport, const ImageInfo& i
 }
 
 bool AirPageImageRenderer::render(GfxRenderer& renderer, const Rect& viewport, const SelectedImage& selected) {
+  ImageBlock::setGrayscaleSimulation(
+      SETTINGS.imageGrayscaleSimulation == CrossPointSettings::IMAGE_GRAYSCALE_256);
   const Rect bounds = fittedBounds(viewport, selected.image);
   if (bounds.width <= 0 || bounds.height <= 0) return false;
 

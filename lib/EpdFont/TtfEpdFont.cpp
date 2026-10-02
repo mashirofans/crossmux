@@ -455,14 +455,30 @@ EpdFontFamily TtfEpdFont::family() const {
 }
 
 bool TtfEpdFont::build(const char* utf8) {
-  if (!loaded_) return false;
-  flushFace(faces_[0]);
-  return addCoverage(utf8);
+  return build(utf8, 1u << Regular);
 }
+
+bool TtfEpdFont::build(const char* utf8, const uint8_t styleMask) {
+  if (!loaded_) return false;
+  if (utf8 == nullptr || styleMask == 0) return false;
+  for (uint8_t style = 0; style < 4; ++style) {
+    if (styleMask & (1u << style)) flushFace(faces_[style]);
+  }
+  return addCoverage(utf8, styleMask);
+}
+
 bool TtfEpdFont::addCoverage(const char* utf8) {
+  return addCoverage(utf8, 1u << Regular);
+}
+
+bool TtfEpdFont::addCoverage(const char* utf8, const uint8_t styleMask) {
   if (!loaded_ || utf8 == nullptr) return false;
-  const auto* p = reinterpret_cast<const unsigned char*>(utf8);
-  while (*p != '\0') faultGlyph(faces_[0], utf8NextCodepoint(&p));
+  if (styleMask == 0) return false;
+  for (uint8_t style = 0; style < 4; ++style) {
+    if (!(styleMask & (1u << style))) continue;
+    const auto* p = reinterpret_cast<const unsigned char*>(utf8);
+    while (*p != '\0') faultGlyph(faces_[style], utf8NextCodepoint(&p));
+  }
   return true;
 }
 

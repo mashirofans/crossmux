@@ -10,6 +10,7 @@
 #include "components/UITheme.h"
 #include "components/UIThemeTokens.h"
 #include "fontIds.h"
+#include "util/UiAntiAliasedRender.h"
 
 namespace fui = freeink::ui;
 
@@ -155,19 +156,20 @@ void UiListActivity::drawFooter() {
 }
 
 void UiListActivity::render(RenderLock&&) {
-  renderer.clearScreen();
-  drawChrome();
-  renderUi();
+  const auto drawFrame = [&] {
+    renderer.clearScreen();
+    drawChrome();
+    renderUi();
+    drawFooter();
+  };
+
+  drawFrame();
   // Wrapped labels grow rows, so fewer rows can fit than the fixed-height
   // estimate ListNav plans with. list() reports the real layout back
   // (ListNav::onListRendered); when the selection landed past the drawn rows
   // the nav advanced the viewport and asked for another build. Bounded: top
   // strictly advances toward the selection each pass.
-  for (int pass = 0; activeNav().consumeRebuildNeeded() && pass < 8; ++pass) {
-    renderer.clearScreen();
-    drawChrome();
-    renderUi();
-  }
-  drawFooter();
-  renderer.displayBuffer();
+  for (int pass = 0; activeNav().consumeRebuildNeeded() && pass < 8; ++pass) drawFrame();
+
+  uiAa::display(renderer, drawFrame);
 }

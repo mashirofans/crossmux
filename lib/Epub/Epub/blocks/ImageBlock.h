@@ -53,6 +53,12 @@ class ImageBlock final : public Block {
   // Current filter; the pixel-cache path is derived from it (see getCachePath).
   static bool bilinearScalingEnabled() { return bilinearScaling; }
 
+  // Reader-scoped high-quality 8-bit-to-4-level image simulation. The mode is
+  // part of the pixel-cache identity, so switching it never reuses pixels
+  // produced by the other dither path.
+  static void setGrayscaleSimulation(bool enabled);
+  static bool grayscaleSimulationEnabled() { return grayscaleSimulation; }
+
   BlockType getType() override { return IMAGE_BLOCK; }
   bool isEmpty() override { return false; }
 
@@ -71,6 +77,7 @@ class ImageBlock final : public Block {
   static void* extractCtx;
   static ExtractFn extractFn;
   static bool bilinearScaling;  // reader-pushed resampling filter
+  static bool grayscaleSimulation;
 
   bool renderInternal(GfxRenderer& renderer, int x, int y, PixelCachePolicy cachePolicy, DecodeOutput output);
 };

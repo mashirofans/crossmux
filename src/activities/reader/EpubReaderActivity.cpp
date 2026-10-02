@@ -1638,6 +1638,8 @@ void EpubReaderActivity::renderBook() {
   // the session — the menu looked like it did nothing. The setter is a no-op
   // when the filter has not changed, so this costs a compare per render.
   ImageBlock::setBilinearScaling(SETTINGS.imageScaling == CrossPointSettings::IMAGE_SCALING_BILINEAR);
+  ImageBlock::setGrayscaleSimulation(
+      SETTINGS.imageGrayscaleSimulation == CrossPointSettings::IMAGE_GRAYSCALE_256);
 
   const auto showPendingSyncSaveError = [this]() {
     if (pendingSyncSaveError) {
@@ -2170,6 +2172,9 @@ void EpubReaderActivity::freePageCache() {
     pageCacheMsb_[slot].reset();
     pageCacheStash_[slot].reset();
     pageCache_[slot].state = ReaderPageCache::State::Empty;
+#ifdef ENABLE_CHINESE_VERSION
+    pageCacheMissingCodepoint_[slot] = 0;
+#endif
   }
 }
 
@@ -2254,17 +2259,29 @@ bool EpubReaderActivity::buildPageCacheSlot(const int slot, const ReaderPageCach
   if (bytes == 0) return false;
   if (!pageCacheBase_[slot]) {
     constexpr size_t kContiguousReserve = 16 * 1024;
-    // Two slots of four planes, charged against PSRAM headroom as a whole.
-    if (memory::psramHasHeadroom(static_cast<size_t>(kPageCacheSlots) * 4 * bytes, bytes, kContiguousReserve)) {
+    // Charge only the current slot and the slots that still need allocation;
+    // slot 1 must not re-check slot 0's already-resident buffers.
+    const size_t remainingSlots = static_cast<size_t>(kPageCacheSlots - slot);
+    if (memory::psramHasHeadroom(remainingSlots * 4 * bytes, bytes, kContiguousReserve)) {
       pageCacheBase_[slot] = memory::makePsramByteBufferUninitializedNoThrow(bytes);
       pageCacheLsb_[slot] = memory::makePsramByteBufferUninitializedNoThrow(bytes);
       pageCacheMsb_[slot] = memory::makePsramByteBufferUninitializedNoThrow(bytes);
       pageCacheStash_[slot] = memory::makePsramByteBufferUninitializedNoThrow(bytes);
     }
     if (!pageCacheBase_[slot] || !pageCacheLsb_[slot] || !pageCacheMsb_[slot] || !pageCacheStash_[slot]) {
-      freePageCache();
-      pageCacheFailed_ = true;
-      LOG_ERR("ERS", "Page cache off: PSRAM allocation of %u B failed", static_cast<unsigned>(4 * bytes));
+      pageCacheBase_[slot].reset();
+      pageCacheLsb_[slot].reset();
+      pageCacheMsb_[slot].reset();
+      pageCacheStash_[slot].reset();
+      pageCache_[slot].state = ReaderPageCache::State::Skipped;
+      // Keep an already-built opposite-direction slot usable. Only a failure
+      // while creating slot 0 means the cache cannot serve either direction.
+      if (slot == 0) {
+        freePageCache();
+        pageCacheFailed_ = true;
+      }
+      LOG_ERR("ERS", "Page cache slot %d unavailable: PSRAM allocation of %u B failed", slot,
+              static_cast<unsigned>(4 * bytes));
       return false;
     }
   }
@@ -2329,7 +2346,7 @@ bool EpubReaderActivity::buildPageCacheSlot(const int slot, const ReaderPageCach
       !renderPlane(GfxRenderer::GRAYSCALE_MSB, pageCacheMsb_[slot].get()) || cancelled())
     return false;
 #ifdef ENABLE_CHINESE_VERSION
-  pageCacheMissingCodepoint_ = fcm ? fcm->consumeMissingChineseCodepoint() : 0;
+  pageCacheMissingCodepoint_[slot] = fcm ? fcm->consumeMissingChineseCodepoint() : 0;
 #endif
   pageCache_[slot].state = ReaderPageCache::State::Ready;
   LOG_DBG("ERS", "Page cache: slot %d, page %d ready in %lums", slot, key.page, millis() - started);
@@ -2505,6 +2522,21 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
 #endif
   };
 
+#if FREEINK_DEVICE_READPICO
+  // Read Pico combines the B/W base with the selector planes and therefore has
+  // no panel-side "cancel" operation: the base was only stashed until the gray
+  // commit. If staging fails or a navigation request interrupts the pass, put
+  // the saved B/W pixels back in the live framebuffer and submit them once so
+  // the panel does not retain the previous page (or a selector plane).
+  const auto abortReadPicoCombinedAa = [&] {
+    renderer.setRenderMode(GfxRenderer::BW);
+    renderer.restoreBwBuffer(/*resyncPanelBaseline=*/false);
+    renderer.cancelGrayscale();
+    renderer.displayBuffer(cleanImageBasePending ? HalDisplay::FULL_REFRESH : HalDisplay::HALF_REFRESH,
+                           DisplayRefreshContext::ContinuousReading);
+  };
+#endif
+
   if (SETTINGS.readingBackgroundEnabled && !readingBackground::load(renderer)) renderer.clearScreen();
   unsigned long cacheBaseMs = 0;
 #if FREEINK_DEVICE_READPICO
@@ -2521,7 +2553,8 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   }
 #ifdef ENABLE_CHINESE_VERSION
 #if FREEINK_DEVICE_READPICO
-  const uint32_t missingCodepoint = pageCacheHit ? pageCacheMissingCodepoint_ : fcm->consumeMissingChineseCodepoint();
+  const uint32_t missingCodepoint =
+      pageCacheHit ? pageCacheMissingCodepoint_[pageCacheLiveSlot_] : fcm->consumeMissingChineseCodepoint();
 #else
   const uint32_t missingCodepoint = fcm->consumeMissingChineseCodepoint();
 #endif
@@ -2721,6 +2754,14 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
     if (needsAnyGrayscale) {
       if (!renderer.storeBwBuffer()) {
         LOG_ERR("ERS", "Failed to store BW buffer for grayscale render; skipping grayscale this page");
+#if FREEINK_DEVICE_READPICO
+        if (combinedGrayscaleBase) {
+          // The base was deferred and storeBwBuffer() failed before either
+          // selector plane was rendered. The live framebuffer is still B/W, so
+          // commit it directly and leave the panel in a known state.
+          abortReadPicoCombinedAa();
+        } else
+#endif
         if (absoluteImageGrayscale) renderer.setRenderMode(GfxRenderer::BW);
         return;
       }
@@ -2745,11 +2786,12 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
       // Abort early if a push/pop is pending (e.g. user opened menu)
       if (activityManager.isSwitchPending()) {
         renderer.setRenderMode(GfxRenderer::BW);
-        // A combined base was only stashed, so it has to be flushed, not restored.
+#if FREEINK_DEVICE_READPICO
         if (combinedGrayscaleBase)
-          renderer.cancelGrayscale();
+          abortReadPicoCombinedAa();
         else
-          renderer.restoreBwBuffer();
+#endif
+        renderer.restoreBwBuffer();
         return;
       }
 
@@ -2770,11 +2812,12 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
       // Abort before the expensive grayscale display if a push/pop is pending
       if (activityManager.isSwitchPending()) {
         renderer.setRenderMode(GfxRenderer::BW);
-        // A combined base was only stashed, so it has to be flushed, not restored.
+#if FREEINK_DEVICE_READPICO
         if (combinedGrayscaleBase)
-          renderer.cancelGrayscale();
+          abortReadPicoCombinedAa();
         else
-          renderer.restoreBwBuffer();
+#endif
+        renderer.restoreBwBuffer();
         return;
       }
       renderer.displayGrayBuffer();

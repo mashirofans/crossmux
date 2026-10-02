@@ -7,7 +7,10 @@
 namespace sd_card_font_cache_format {
 
 constexpr size_t HEADER_AREA_SIZE = 4096;
-constexpr uint16_t VERSION = 1;
+// Version 2 changes contentHash from the header/TOC fingerprint to a CRC of
+// the complete .cpfont payload. Old OTA payloads must be rejected rather than
+// trusted when a card font keeps the same metadata but changes glyph bitmaps.
+constexpr uint16_t VERSION = 2;
 constexpr uint8_t MAGIC[8] = {'C', 'P', 'S', 'D', 'F', 'C', '1', '\0'};
 
 struct Header {

@@ -66,8 +66,13 @@ class SdCardFontSystem {
   SdCardFontRegistry& registry() { return registry_; }
 
   /// Mark the registry as needing re-discovery.
-  /// Thread-safe: can be called from the web server task.
-  void markRegistryDirty() { registryDirty_.store(true, std::memory_order_release); }
+  /// Thread-safe: can be called from the web server task. The generation is
+  /// advanced at the mutation boundary so a later refreshIfDirty() call cannot
+  /// consume the dirty flag without also forcing the active font to reload.
+  void markRegistryDirty() {
+    registryGeneration_.fetch_add(1, std::memory_order_acq_rel);
+    registryDirty_.store(true, std::memory_order_release);
+  }
 
   /// Chinese builds replace the duplicate built-in reader face with the
   /// complete SD-card Noto Sans family when it is installed.
@@ -81,6 +86,8 @@ class SdCardFontSystem {
     if (registryDirty_.exchange(false, std::memory_order_acquire)) {
       registry_.discover();
       adoptCompleteChineseNotoSans();
+      registryScannedGeneration_.store(registryGeneration_.load(std::memory_order_acquire),
+                                       std::memory_order_release);
     }
   }
 
@@ -116,6 +123,12 @@ class SdCardFontSystem {
   SdCardFontRegistry registry_;
   SdCardFontManager manager_;
   std::atomic<bool> registryDirty_{false};
+  // Monotonic mutation generation. It deliberately remains independent from
+  // registryDirty_: web/settings list consumers may clear the flag before the
+  // reader calls ensureLoaded(), but the generation still forces a reload.
+  std::atomic<uint32_t> registryGeneration_{0};
+  std::atomic<uint32_t> registryScannedGeneration_{0};
+  uint32_t loadedRegistryGeneration_ = 0;
 
 #if CROSSPOINT_VECTOR_FONTS
   // One style source file. SMALL files are read fully into `bytes` (resident,

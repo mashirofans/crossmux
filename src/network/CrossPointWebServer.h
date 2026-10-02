@@ -131,7 +131,10 @@ class CrossPointWebServer {
   struct FontUploadState {
     HalFile file;
     std::string familyName;
+    // filePath is the temporary upload path until commit; finalPath is only
+    // published after the complete file has been written.
     std::string filePath;
+    std::string finalPath;
     bool valid = false;
     bool magicChecked = false;
     size_t bytesWritten = 0;

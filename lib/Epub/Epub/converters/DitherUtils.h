@@ -25,3 +25,20 @@ inline uint8_t applyBayerDither4Level(uint8_t gray, int x, int y) {
   if (adjusted < 192) return 2;
   return 3;
 }
+
+// An 8x8 ordered dither keeps the full 8-bit sample while reducing it to the
+// panel's four native levels. The 64 thresholds provide a finer spatial
+// approximation of the 256 input levels than the historical 4x4 matrix,
+// without allocating error buffers or depending on raster callback order.
+inline uint8_t applyHighQualityDither4Level(const uint8_t gray, const int x, const int y) {
+  static constexpr uint8_t bayer8x8[8][8] = {
+      {0, 32, 8, 40, 2, 34, 10, 42},   {48, 16, 56, 24, 50, 18, 58, 26},
+      {12, 44, 4, 36, 14, 46, 6, 38},  {60, 28, 52, 20, 62, 30, 54, 22},
+      {3, 35, 11, 43, 1, 33, 9, 41},   {51, 19, 59, 27, 49, 17, 57, 25},
+      {15, 47, 7, 39, 13, 45, 5, 37},  {63, 31, 55, 23, 61, 29, 53, 21},
+  };
+  const int base = gray / 64;
+  const int remainder = gray & 63;
+  const int level = base + (remainder > bayer8x8[y & 7][x & 7] ? 1 : 0);
+  return static_cast<uint8_t>(level > 3 ? 3 : level);
+}

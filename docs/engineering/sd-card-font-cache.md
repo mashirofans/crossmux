@@ -107,14 +107,14 @@ The font is not memory-mapped, so it does not consume the ESP32-C3's limited
 MMU pages.
 
 Startup still opens the SD source long enough to compare its path, size, and
-`.cpfont` header/style TOC identity. The large random reads that dominate page
+complete-payload CRC identity. The large random reads that dominate page
 prewarm then come from internal Flash.
 
 ```text
 SdCardFont
     |
     v
-cache header/path/size/TOC valid?
+cache header/path/size/payload CRC valid?
     | yes                         | no
     v                             v
 HalOtaSlot bounded random read    HalStorage / SD
@@ -129,8 +129,8 @@ font and retries the same offset from SD.
 ## Cache identity and commit
 
 The first 4KiB erase sector contains a versioned `CPSDFC1` header. It records
-the source path, payload size, an FNV-1a identity of the `.cpfont` header and
-style TOC, the complete payload CRC-32, and a header CRC-32. The current
+the source path, payload size, a CRC-32 identity of the complete `.cpfont`
+payload, the complete payload CRC-32, and a header CRC-32. The current
 0x640000-byte OTA slot leaves 6,549,504 bytes for the `.cpfont` payload.
 
 A preload uses the following commit sequence:
@@ -143,9 +143,10 @@ A preload uses the following commit sequence:
 6. Write the valid header last.
 
 A partial header write is rejected by its Magic/version/header CRC. The normal
-boot path validates the header and SD source identity but deliberately does not
-rescan the entire payload CRC; doing so would add a full-font read before the
-first page. The complete CRC is guaranteed at commit time, while later
+boot path validates the header and SD source identity by rescanning the
+complete payload once; this adds a bounded full-font read before the first
+page but prevents same-metadata bitmap replacements from reusing stale Flash.
+The complete CRC is also guaranteed at commit time, while later
 Flash-driver read failures fall back to SD. Silent Flash bit rot after a
 successful commit is not detected without rebuilding the cache.
 

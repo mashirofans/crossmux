@@ -266,6 +266,7 @@ void emitBilinearRow(PngContext& ctx, const int dstY, const uint8_t* rowTop, con
   }
 
   const bool useDithering = ctx.config->useDithering;
+  const bool highQualityDithering = ctx.config->highQualityDithering;
   const int lastX = ctx.visibleWidth > 0 ? ctx.visibleWidth - 1 : 0;
   // Source column advances by a fixed 16.16 step, so no division is needed per
   // pixel (a 64-bit divide per pixel cost more than the interpolation itself).
@@ -301,7 +302,8 @@ void emitBilinearRow(PngContext& ctx, const int dstY, const uint8_t* rowTop, con
     if (alpha < 8 || alpha <= alphaThreshold4x4(outX, outY)) continue;
     uint8_t ditheredGray;
     if (useDithering) {
-      ditheredGray = applyBayerDither4Level(sample, outX, outY);
+      ditheredGray = highQualityDithering ? applyHighQualityDither4Level(sample, outX, outY)
+                                          : applyBayerDither4Level(sample, outX, outY);
     } else {
       const int level = sample / 85;
       ditheredGray = static_cast<uint8_t>(level > 3 ? 3 : level);
@@ -432,7 +434,8 @@ int pngDrawCallback(PNGDRAW* pDraw) {
 
           uint8_t ditheredGray;
           if (useDithering) {
-            ditheredGray = applyBayerDither4Level(gray, outX, outY);
+            ditheredGray = highQualityDithering ? applyHighQualityDither4Level(gray, outX, outY)
+                                                : applyBayerDither4Level(gray, outX, outY);
           } else {
             ditheredGray = gray >> 6;
           }

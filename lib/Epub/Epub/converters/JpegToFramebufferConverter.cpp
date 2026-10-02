@@ -152,6 +152,7 @@ int jpegDrawCallback(JPEGDRAW* pDraw) {
   if (stride <= 0 || blockH <= 0 || validW <= 0) return 1;
 
   const bool useDithering = ctx->config->useDithering;
+  const bool highQualityDithering = ctx->config->highQualityDithering;
   const bool writeFramebuffer = ctx->config->output == DecodeOutput::FrameBufferAndCache;
   bool caching = ctx->caching;
   const int32_t fineScaleFPX = ctx->fineScaleFPX;
@@ -212,7 +213,10 @@ int jpegDrawCallback(JPEGDRAW* pDraw) {
       renderer.drawGrayscale16Pixel(outX, outY, gray);
       return;
     }
-    const uint8_t level = useDithering ? applyBayerDither4Level(gray, outX, outY) : gray / 85;
+    const uint8_t level = useDithering
+                              ? (highQualityDithering ? applyHighQualityDither4Level(gray, outX, outY)
+                                                      : applyBayerDither4Level(gray, outX, outY))
+                              : gray / 85;
     if (writeFramebuffer) pw.writePixel(outX, level);
     if (caching) cw.writePixel(outX, level);
   };

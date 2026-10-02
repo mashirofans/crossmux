@@ -32,6 +32,9 @@ struct RenderConfig {
   // behaviour, one source pixel per output pixel), true = bilinear blend of the
   // source neighbourhood. Callers that must keep the cheap path leave it false.
   bool bilinearScaling = false;
+  // Use the finer 8x8 ordered dither when reducing 8-bit samples to the
+  // display's four 2-bit levels. NativeGrayscale16 output bypasses this.
+  bool highQualityDithering = false;
   std::string cachePath;  // If non-empty, decoder will write pixel cache to this path
   DecodeOutput output = DecodeOutput::FrameBufferAndCache;
 };

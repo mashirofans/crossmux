@@ -146,10 +146,13 @@ void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer, bool allowFlashCache)
   // when the wanted family/size still maps to the same point size — the file
   // contents on disk may have changed (e.g. user re-uploaded a new build).
   const bool registryWasDirty = registryDirty_.exchange(false, std::memory_order_acquire);
-  if (registryWasDirty) {
-    LOG_DBG("SDFS", "Registry dirty — re-discovering fonts");
+  const uint32_t registryGeneration = registryGeneration_.load(std::memory_order_acquire);
+  const bool registryChanged = registryWasDirty || registryGeneration != loadedRegistryGeneration_;
+  if (registryChanged && registryScannedGeneration_.load(std::memory_order_acquire) != registryGeneration) {
+    if (!registryWasDirty) LOG_DBG("SDFS", "Registry generation changed — re-discovering fonts");
     registry_.discover();
     adoptCompleteChineseNotoSans();
+    registryScannedGeneration_.store(registryGeneration, std::memory_order_release);
   }
 
   const char* wantedFamily = SETTINGS.sdFontFamilyName;
@@ -161,7 +164,8 @@ void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer, bool allowFlashCache)
     const auto* wantedFam = registry_.findFamily(wantedFamily);
     if (wantedFam && wantedFam->vector) {
       if (!manager_.currentFamilyName().empty()) manager_.unloadAll(renderer);
-      loadTtfFamily(*wantedFam, renderer, registryWasDirty);
+      loadTtfFamily(*wantedFam, renderer, registryChanged);
+      if (ttfFamily_ == wantedFamily) loadedRegistryGeneration_ = registryGeneration;
       return;
     }
   }
@@ -183,6 +187,7 @@ void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer, bool allowFlashCache)
     snapFontPointSizeTo(snapToNearestPointSize(BUILTIN_READER_POINT_SIZES, std::size(BUILTIN_READER_POINT_SIZES),
                                                SETTINGS.fontPointSize));
 #endif
+    loadedRegistryGeneration_ = registryGeneration;
     return;
   }
 
@@ -196,6 +201,7 @@ void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer, bool allowFlashCache)
       LOG_DBG("SDFS", "SD font family disappeared: %s (clearing)", wantedFamily);
       manager_.unloadAll(renderer);
       SETTINGS.clearSdFontFamily();
+      loadedRegistryGeneration_ = registryGeneration;
       return;
     }
     const auto* selected = family->findNearestSize(SETTINGS.fontPointSize);
@@ -203,7 +209,7 @@ void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer, bool allowFlashCache)
     // Snap before the early return: the wanted size can already be loaded while
     // the setting still names a size this family does not ship.
     snapFontPointSizeTo(wantedPt);
-    if (!registryWasDirty && wantedPt == manager_.currentPointSize()) {
+    if (!registryChanged && wantedPt == manager_.currentPointSize()) {
       // Nothing to reload, but the UI fallbacks are registered as a side effect of
       // loading and are dropped again when the SD faces are unloaded. This is the
       // path the UI activities actually take, so without re-asserting them here a
@@ -211,10 +217,11 @@ void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer, bool allowFlashCache)
       // SD family. setupUiFallbacks() is cheap on a warm family: loadFamilyExtraSize()
       // reuses an already-resident size instead of re-reading it.
       setupUiFallbacks(renderer);
+      loadedRegistryGeneration_ = registryGeneration;
       return;
     }
     LOG_DBG("SDFS", "Reloading %s: size %u -> %u%s", wantedFamily, manager_.currentPointSize(), wantedPt,
-            registryWasDirty ? " [registry dirty]" : "");
+            registryChanged ? " [registry dirty]" : "");
   }
 
   if (!currentFamily.empty()) {
@@ -226,18 +233,26 @@ void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer, bool allowFlashCache)
     if (manager_.loadFamily(*family, renderer, SETTINGS.fontPointSize, preferFlash)) {
       snapFontPointSizeTo(manager_.currentPointSize());
       setupUiFallbacks(renderer);
+      loadedRegistryGeneration_ = registryGeneration;
       LOG_DBG("SDFS", "Loaded SD font family: %s", wantedFamily);
     } else {
       LOG_ERR("SDFS", "Failed to load SD font family: %s (clearing)", wantedFamily);
       SETTINGS.clearSdFontFamily();
+      loadedRegistryGeneration_ = registryGeneration;
     }
   } else {
     LOG_DBG("SDFS", "SD font family not found: %s (clearing)", wantedFamily);
     SETTINGS.clearSdFontFamily();
+    loadedRegistryGeneration_ = registryGeneration;
   }
 }
 
-void SdCardFontSystem::releaseLoadedFont(GfxRenderer& renderer) { manager_.unloadAll(renderer); }
+void SdCardFontSystem::releaseLoadedFont(GfxRenderer& renderer) {
+  manager_.unloadAll(renderer);
+#if CROSSPOINT_VECTOR_FONTS
+  unloadTtf(renderer);
+#endif
+}
 
 bool SdCardFontSystem::adoptCompleteChineseNotoSans() {
 #ifdef ENABLE_CHINESE_VERSION
