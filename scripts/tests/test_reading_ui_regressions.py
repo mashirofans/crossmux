@@ -33,6 +33,24 @@ def run_cpp(program, include_dirs=(), defines=()):
 
 
 class ReadingUiRegressionTest(unittest.TestCase):
+    def test_ui_aa_keeps_readpico_selector_background_untouched(self):
+        helper = (ROOT / 'src/util/UiAntiAliasedRender.h').read_text()
+        gfx = (ROOT / 'lib/GfxRenderer/GfxRenderer.cpp').read_text()
+        list_activity = (ROOT / 'src/activities/UiListActivity.cpp').read_text()
+        reader_menu = (ROOT / 'src/activities/reader/EpubReaderMenuActivity.cpp').read_text()
+
+        # Read Pico's OverlayMasks use zero as "leave the B/W base alone".
+        # Replaying a UI frame with a white clear or solid white primitive in a
+        # selector plane turns the whole panel gray/black.
+        self.assertIn('renderer.setUiAntiAliasingPass(true);', helper)
+        self.assertEqual(helper.count('renderer.setUiAntiAliasingPass(false);'), 2)
+        self.assertIn('if (uiAntiAliasingPass_ && renderMode != BW) return;', gfx)
+        self.assertIn('if (uiAntiAliasingPass_ && renderMode != BW) return;', gfx[gfx.index('void GfxRenderer::fillRectImpl'):])
+        self.assertIn('renderer.drawUiAntiAliasedPixel(x, y, pixel.state);', gfx)
+        for source in (list_activity, reader_menu):
+            self.assertIn('renderer.getRenderMode() != GfxRenderer::BW', source)
+            self.assertIn('renderer.getRenderMode() == GfxRenderer::BW ? 0xFF : 0x00', source)
+
     def test_splash_uses_font_heights_and_keeps_version_inside_safe_area(self):
         source = (ROOT / 'src/components/themes/BaseTheme.cpp').read_text()
         program = r'''

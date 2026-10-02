@@ -221,8 +221,12 @@ void EpubReaderMenuActivity::drawChrome() {
 void EpubReaderMenuActivity::render(RenderLock&&) {
   if (optionPopup.processRender(renderer, mappedInput)) return;
 
+  if (renderer.getRenderMode() != GfxRenderer::BW) renderer.setRenderMode(GfxRenderer::BW);
   const auto drawFrame = [&] {
-    renderer.clearScreen();
+    // Grayscale selector planes use zero as the untouched background.  A raw
+    // 0xFF clear here would select a gray tone for the entire panel during the
+    // AA pass (and on Read Pico can make the whole settings page appear black).
+    renderer.clearScreen(renderer.getRenderMode() == GfxRenderer::BW ? 0xFF : 0x00);
     drawChrome();
     renderUi();
     drawFooter();

@@ -126,6 +126,9 @@ class GfxRenderer {
   mutable int _stripY0 = 0;
   mutable int _stripRows = 0;
   mutable bool _stripActive = false;
+  // Scoped by util/UiAntiAliasedRender.h. It changes only UI selector writes;
+  // reader/body grayscale rendering keeps the historical behavior.
+  mutable bool uiAntiAliasingPass_ = false;
   mutable int clipLeft_ = 0;
   mutable int clipTop_ = 0;
   mutable int clipRight_ = 32767;
@@ -367,6 +370,9 @@ class GfxRenderer {
     clipBottom_ = y + height;
   }
   void drawPixel(int x, int y, bool state = true) const;
+  // Two-bit glyph coverage uses this escape hatch for gray pixels it
+  // intentionally selects; ordinary UI primitives continue through drawPixel.
+  void drawUiAntiAliasedPixel(int x, int y, bool state) const;
   // Draw glyph ink with clipping and orientation resolved once per glyph.
   void drawGlyphBitmap(const uint8_t* bitmap, int width, int height, const glyphBitmap::Frame& frame, bool twoBit,
                        RenderMode mode, bool state) const;
@@ -460,6 +466,8 @@ class GfxRenderer {
   // Grayscale functions
   void setRenderMode(RenderMode mode);
   RenderMode getRenderMode() const { return renderMode; }
+  void setUiAntiAliasingPass(bool enabled) const { uiAntiAliasingPass_ = enabled; }
+  bool isUiAntiAliasingPass() const { return uiAntiAliasingPass_; }
   // Grayscale preconditioning settle pass (no-op on X4). The rect overload
   // takes the gray region in LOGICAL screen coordinates and rotates it to the
   // panel; the no-arg overload settles the full frame. Call after the BW base

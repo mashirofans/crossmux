@@ -33,12 +33,16 @@ void display(GfxRenderer& renderer, DrawFn&& draw) {
 
   renderer.clearScreen(0x00);
   renderer.setRenderMode(GfxRenderer::GRAYSCALE_LSB);
+  renderer.setUiAntiAliasingPass(true);
   draw();
+  renderer.setUiAntiAliasingPass(false);
   renderer.copyGrayscaleLsbBuffers();
 
   renderer.clearScreen(0x00);
   renderer.setRenderMode(GfxRenderer::GRAYSCALE_MSB);
+  renderer.setUiAntiAliasingPass(true);
   draw();
+  renderer.setUiAntiAliasingPass(false);
   renderer.copyGrayscaleMsbBuffers();
 
   renderer.displayGrayBuffer();

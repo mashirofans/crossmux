@@ -544,7 +544,11 @@ static void draw2BitGlyphPixel(const GfxRenderer& renderer, const GfxRenderer::R
                                const int y, const bool pixelState, const uint8_t coverage) {
   const auto pixel = GfxRenderer::mapTwoBitGlyphCoverage(renderMode, coverage);
   if (!pixel.draw) return;
-  renderer.drawPixel(x, y, renderMode == GfxRenderer::BW ? pixelState : pixel.state);
+  if (renderMode == GfxRenderer::BW) {
+    renderer.drawPixel(x, y, pixelState);
+  } else {
+    renderer.drawUiAntiAliasedPixel(x, y, pixel.state);
+  }
 }
 
 // Outline fallback has no font bitmap and uses the same metrics as layout.
@@ -808,6 +812,7 @@ void GfxRenderer::drawGlyphBitmap(const uint8_t* bitmap, const int width, const 
 // IMPORTANT: This function is in critical rendering path and is called for every pixel. Please keep it as simple and
 // efficient as possible.
 void GfxRenderer::drawPixel(const int x, const int y, const bool state) const {
+  if (uiAntiAliasingPass_ && renderMode != BW) return;
   if (x < clipLeft_ || y < clipTop_ || x >= clipRight_ || y >= clipBottom_) return;
   int phyX = 0;
   int phyY = 0;
@@ -843,6 +848,13 @@ void GfxRenderer::drawPixel(const int x, const int y, const bool state) const {
   } else {
     target[byteIndex] |= 1 << bitPosition;  // Set bit
   }
+}
+
+void GfxRenderer::drawUiAntiAliasedPixel(const int x, const int y, const bool state) const {
+  const bool wasUiPass = uiAntiAliasingPass_;
+  uiAntiAliasingPass_ = false;
+  drawPixel(x, y, state);
+  uiAntiAliasingPass_ = wasUiPass;
 }
 
 int GfxRenderer::getTextWidth(const int fontId, const char* text, const EpdFontFamily::Style style,
@@ -1247,6 +1259,7 @@ void GfxRenderer::fillRectDither(const int x, const int y, const int width, cons
 template <Color C>
 void GfxRenderer::fillRectImpl(const int x, const int y, const int width, const int height) const {
   if constexpr (C == Color::Clear) return;
+  if (uiAntiAliasingPass_ && renderMode != BW) return;
   if (width <= 0 || height <= 0) return;
   if (fontCacheManager_ && fontCacheManager_->isScanning()) return;
 
@@ -2767,6 +2780,7 @@ void GfxRenderer::setRenderMode(RenderMode mode) {
     display.cleanupGrayscaleBuffers(nullptr);  // cancel an unfinished absolute pass
     absoluteGrayPlanes = false;
   }
+  if (mode == BW) uiAntiAliasingPass_ = false;
   renderMode = mode;
 }
 
