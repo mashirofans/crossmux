@@ -2,4 +2,14 @@
 #include <stdint.h>
 
 // HAL-owned request intent; no persistent permission crosses display calls.
-enum class DisplayRefreshContext : uint8_t { Normal, ContinuousReading, TextOnlyAntiAliasing, ImageReading };
+enum class DisplayRefreshContext : uint8_t {
+  Normal,
+  ContinuousReading,
+  TextOnlyAntiAliasing,
+  ImageReading,
+  // 波纹方向是逻辑旋转后的物理面板方向。/ Ripple directions are physical panel directions after logical rotation.
+  RippleLeft,
+  RippleRight,
+  RippleUp,
+  RippleDown
+};

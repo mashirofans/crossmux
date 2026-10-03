@@ -106,6 +106,14 @@ EInkDisplay::RefreshContext convertRefreshContext(DisplayRefreshContext context)
       return EInkDisplay::RefreshContext::TextOnlyAntiAliasing;
     case DisplayRefreshContext::ImageReading:
       return EInkDisplay::RefreshContext::ImageReading;
+    case DisplayRefreshContext::RippleLeft:
+      return EInkDisplay::RefreshContext::RippleLeft;
+    case DisplayRefreshContext::RippleRight:
+      return EInkDisplay::RefreshContext::RippleRight;
+    case DisplayRefreshContext::RippleUp:
+      return EInkDisplay::RefreshContext::RippleUp;
+    case DisplayRefreshContext::RippleDown:
+      return EInkDisplay::RefreshContext::RippleDown;
   }
   return EInkDisplay::RefreshContext::Normal;
 }

@@ -366,6 +366,11 @@ inline const std::vector<SettingInfo>& getBaseSettingsList() {
         SettingInfo::Enum(StrId::STR_READER_MENU_STYLE, &CrossPointSettings::readerMenuStyle,
                           {StrId::STR_MENU_STYLE_LIST, StrId::STR_MENU_STYLE_TOOLBAR}, "readerMenuStyle",
                           StrId::STR_CAT_READER),
+#if FREEINK_DEVICE_READPICO || defined(SIMULATOR_DEVICE_READPICO)
+        SettingInfo::Enum(StrId::STR_PAGE_TURN_EFFECT, &CrossPointSettings::readerPageTurnEffect,
+                          {StrId::STR_DEFAULT_VALUE, StrId::STR_PAGE_TURN_EFFECT_RIPPLE}, "readerPageTurnEffect",
+                          StrId::STR_CAT_READER),
+#endif
         // --- Controls ---
         SettingInfo::Enum(StrId::STR_SIDE_BTN_LAYOUT, &CrossPointSettings::sideButtonLayout,
                           {StrId::STR_PREV_NEXT, StrId::STR_NEXT_PREV, StrId::STR_DISABLED, StrId::STR_NEXT_NEXT,
@@ -579,6 +584,9 @@ inline const std::vector<SettingInfo>& getBaseSettingsList() {
 }
 
 inline bool isSettingAvailableOnBoard(const SettingInfo& setting) {
+#if !FREEINK_DEVICE_READPICO && !defined(SIMULATOR_DEVICE_READPICO)
+  if (setting.valuePtr == &CrossPointSettings::readerPageTurnEffect) return false;
+#endif
   if (!BoardConfig::hasTouch() && setting.nameId == StrId::STR_TOUCH_READER_CONTROLS) return false;
   if (!BoardConfig::hasHomeKey() && setting.nameId == StrId::STR_SHOW_READER_MENU) return false;
   const bool frontlightSetting = setting.valuePtr == &CrossPointSettings::frontlightBrightness ||

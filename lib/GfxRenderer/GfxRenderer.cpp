@@ -454,6 +454,18 @@ static inline void rotateCoordinates(const GfxRenderer::Orientation orientation,
   }
 }
 
+DisplayRefreshContext GfxRenderer::pageTurnContext(bool forward) const {
+  if (fadingFix || isInverted()) return DisplayRefreshContext::ContinuousReading;
+  int fromX = 0, fromY = 0, toX = 0, toY = 0;
+  rotateCoordinates(orientation, forward ? 1 : 0, 0, &fromX, &fromY, panelWidth, panelHeight);
+  rotateCoordinates(orientation, forward ? 0 : 1, 0, &toX, &toY, panelWidth, panelHeight);
+  if (toX < fromX) return DisplayRefreshContext::RippleLeft;
+  if (toX > fromX) return DisplayRefreshContext::RippleRight;
+  if (toY < fromY) return DisplayRefreshContext::RippleUp;
+  if (toY > fromY) return DisplayRefreshContext::RippleDown;
+  return DisplayRefreshContext::ContinuousReading;
+}
+
 // Output of screenRectToAlignedMemRect: a rectangle in panel-memory
 // coordinates whose x and width are guaranteed to be multiples of 8 (the
 // SDK's EInkDisplay::displayWindow alignment requirement). `valid == false`
@@ -2101,6 +2113,10 @@ void GfxRenderer::displayBuffer(HalDisplay::RefreshMode refreshMode, DisplayRefr
   if (nextRefreshOverridePending) {
     effectiveRefreshMode = nextRefreshOverride;
     nextRefreshOverridePending = false;
+    if (context == DisplayRefreshContext::RippleLeft || context == DisplayRefreshContext::RippleRight ||
+        context == DisplayRefreshContext::RippleUp || context == DisplayRefreshContext::RippleDown) {
+      context = DisplayRefreshContext::Normal;
+    }
   }
 #ifdef SIMULATOR
   (void)context;
@@ -2115,6 +2131,10 @@ void GfxRenderer::displayBufferAsync(const HalDisplay::RefreshMode refreshMode, 
   if (nextRefreshOverridePending) {
     effectiveRefreshMode = nextRefreshOverride;
     nextRefreshOverridePending = false;
+    if (context == DisplayRefreshContext::RippleLeft || context == DisplayRefreshContext::RippleRight ||
+        context == DisplayRefreshContext::RippleUp || context == DisplayRefreshContext::RippleDown) {
+      context = DisplayRefreshContext::Normal;
+    }
   }
   // The async path has no turn-off-screen hook, which the sunlight fading fix
   // relies on; keep those users on the blocking path.
@@ -2731,17 +2751,34 @@ size_t GfxRenderer::getBufferSize() const { return frameBufferSize; }
 
 void GfxRenderer::displayGrayscaleBase(HalDisplay::RefreshMode fallback, DisplayRefreshContext context) const {
   absoluteGrayPlanes = false;
+  HalDisplay::RefreshMode effectiveFallback = fallback;
+  if (nextRefreshOverridePending) {
+    effectiveFallback = nextRefreshOverride;
+    nextRefreshOverridePending = false;
+    // 显式的一次性档位优先，不能让旧波纹请求改变调用方选择的波形。
+    // An explicit one-shot mode is authoritative: do not let a stale ripple
+    // request change the waveform selected by the caller.
+    if (context == DisplayRefreshContext::RippleLeft || context == DisplayRefreshContext::RippleRight ||
+        context == DisplayRefreshContext::RippleUp || context == DisplayRefreshContext::RippleDown) {
+      context = DisplayRefreshContext::Normal;
+    }
+  }
 #ifdef SIMULATOR
   (void)context;
-  display.displayGrayscaleBase(fallback, fadingFix);
+  display.displayGrayscaleBase(effectiveFallback, fadingFix);
 #else
-  display.displayGrayscaleBase(fallback, fadingFix, context);
+  display.displayGrayscaleBase(effectiveFallback, fadingFix, context);
 #endif
 }
 
 bool GfxRenderer::displayGrayscaleBase(HalDisplay::GrayscaleMode mode, HalDisplay::RefreshMode fallback) const {
   absoluteGrayPlanes = false;
-  if (!display.displayGrayscaleBase(mode, fallback, fadingFix)) return false;
+  HalDisplay::RefreshMode effectiveFallback = fallback;
+  if (nextRefreshOverridePending) {
+    effectiveFallback = nextRefreshOverride;
+    nextRefreshOverridePending = false;
+  }
+  if (!display.displayGrayscaleBase(mode, effectiveFallback, fadingFix)) return false;
   absoluteGrayPlanes = mode != HalDisplay::GrayscaleMode::Overlay;
   return true;
 }

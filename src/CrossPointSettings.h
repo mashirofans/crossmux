@@ -284,6 +284,15 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     PAGE_TURN_GESTURE_COUNT
   };
 
+  // Read Pico page-turn presentation. The setting is exposed only by the
+  // Read Pico hardware and simulator profiles; other targets keep the default
+  // value so their settings schema remains unchanged.
+  enum READER_PAGE_TURN_EFFECT {
+    PAGE_TURN_EFFECT_DEFAULT = 0,
+    PAGE_TURN_EFFECT_RIPPLE = 1,
+    READER_PAGE_TURN_EFFECT_COUNT
+  };
+
   // How the reader menu opens on touch boards. Persisted under the legacy
   // "tapForReaderMenu" key: 0/1 keep their old Off/Tap meaning.
   enum SHOW_READER_MENU { READER_MENU_OFF = 0, READER_MENU_TAP = 1, READER_MENU_SWIPE_UP = 2, SHOW_READER_MENU_COUNT };
@@ -466,6 +475,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // Focus Reading - emphasizes the first part of words with bold
   uint8_t focusReadingEnabled = 0;
   uint8_t readerMenuStyle = READER_MENU_LIST;
+  uint8_t readerPageTurnEffect = PAGE_TURN_EFFECT_DEFAULT;
   // Image resampling inside the reader (see IMAGE_SCALING). Applies to inline
   // book images only; reader chrome and other activities are untouched.
   uint8_t imageScaling = IMAGE_SCALING_NEAREST;

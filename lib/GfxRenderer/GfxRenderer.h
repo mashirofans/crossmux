@@ -266,6 +266,9 @@ class GfxRenderer {
   int getScreenWidth() const;
   int getScreenHeight() const;
   void tapToLogical(float nx, float ny, int& outX, int& outY) const;
+  // 将逻辑翻页转换为请求级物理波纹方向。/ Rotate a logical page turn into a request-scoped physical ripple direction.
+  // 下一页从右向左；反色或淡化修复继续使用普通刷新。/ Forward travels right to left; inverted/fading-fix rendering stays ordinary.
+  DisplayRefreshContext pageTurnContext(bool forward) const;
   void displayBuffer(HalDisplay::RefreshMode refreshMode = HalDisplay::FAST_REFRESH,
                      DisplayRefreshContext context = DisplayRefreshContext::Normal) const;
   // Force the next displayBuffer() to use `mode`, overriding its argument once.

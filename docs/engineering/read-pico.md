@@ -99,6 +99,11 @@ acceptance remain separate from build and package verification.
   Ordinary grayscale uses GL16; scheduled/manual FULL uses GC16 even when
   pixels are unchanged. Image pages enter this combined path before the ordinary
   image-base path, so they do not activate a second B/W waveform first.
+- The Reader setting `readerPageTurnEffect=Ripple` enables the E0470 staggered
+  page turn for successful text-only EPUB turns. It uses one difference image,
+  sixteen spatial bands and the 37-phase GL16 table; periodic cleanup, image
+  pages, inverted output and low-memory/scan failures fall back to the normal
+  refresh path. The setting is disabled by default.
 - Failed rail bring-up skips drawing. A failed waveform leaves the baseline
   unknown; the next attempt clears physically and forces GC16. The highlevel
   copy paths advance `back_fb` only after a successful draw.

@@ -487,6 +487,7 @@ int EpubReaderActivity::bookPercentFor(const ChapterPosition& position) const {
 
 void EpubReaderActivity::openReaderMenu() {
   pendingManualTurn = 0;
+  pendingPageTurnDirection = 0;
   if (usesToolbarMenu()) {
     // Reached from a child activity's result handler (footnotes, bookmarks,
     // go-to-percent... cancelled back to the menu), so the framebuffer holds
@@ -941,6 +942,7 @@ void EpubReaderActivity::loop() {
     // toolbar over it (one refresh) instead of pushing a full-screen menu.
     if (usesToolbarMenu() && section) {
       pendingManualTurn = 0;
+      pendingPageTurnDirection = 0;
       openOverlay(Overlay::Toolbar);
     } else {
       openReaderMenu();
@@ -1472,6 +1474,7 @@ bool EpubReaderActivity::pageTurn(bool isForwardTurn) {
   if (isForwardTurn) {
     if (section->currentPage < section->pageCount - 1 || section->isBuilding()) {
       section->currentPage++;
+      pendingPageTurnDirection = 1;
       lastPageTurnTime = millis();
       return true;
     } else if (currentSpineIndex + 1 < epub->getSpineItemsCount()) {
@@ -1479,6 +1482,7 @@ bool EpubReaderActivity::pageTurn(bool isForwardTurn) {
       nextPageNumber = 0;
       currentSpineIndex++;
       section.reset();
+      pendingPageTurnDirection = 1;
       lastPageTurnTime = millis();
       return true;
     } else {
@@ -1489,6 +1493,7 @@ bool EpubReaderActivity::pageTurn(bool isForwardTurn) {
   } else {
     if (section->currentPage > 0) {
       section->currentPage--;
+      pendingPageTurnDirection = -1;
       lastPageTurnTime = millis();
       return true;
     } else if (currentSpineIndex > 0) {
@@ -1497,6 +1502,7 @@ bool EpubReaderActivity::pageTurn(bool isForwardTurn) {
       pendingPageJump = std::numeric_limits<uint16_t>::max();
       currentSpineIndex--;
       section.reset();
+      pendingPageTurnDirection = -1;
       lastPageTurnTime = millis();
       return true;
     }
@@ -2448,9 +2454,21 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   const bool manualRefreshPending = forcedRefreshPending;
   forcedRefreshPending = false;
   const bool cleanImageBasePending = manualRefreshPending || pagesUntilFullRefresh <= 1;
+  const int8_t pageTurnDirection = pendingPageTurnDirection;
+  pendingPageTurnDirection = 0;
+#if FREEINK_DEVICE_READPICO
+  // The spatial ripple is a B/W/GL16 turn. It deliberately gives up text AA
+  // for text-only pages during this one render; image pages, periodic cleanup,
+  // and explicit refreshes keep the normal grayscale path instead.
+  const bool rippleRequested = SETTINGS.readerPageTurnEffect == CrossPointSettings::PAGE_TURN_EFFECT_RIPPLE &&
+                               pageTurnDirection != 0 && !pageHasImages && !cleanImageBasePending &&
+                               !renderer.isInverted();
+#else
+  constexpr bool rippleRequested = false;
+#endif
   // Night mode renders crisp B/W; the SDK disables every grayscale display path.
   const bool grayscaleEnabled = !renderer.isInverted();
-  const bool needsTextGrayscale = grayscaleEnabled && SETTINGS.textAntiAliasing;
+  const bool needsTextGrayscale = grayscaleEnabled && SETTINGS.textAntiAliasing && !rippleRequested;
 #if FREEINK_DEVICE_EEGO_A4
   // A4 single-refresh design: displayGrayBuffer() replaces the B/W base on the
   // panel, so whatever the gray pass draws IS the final frame. With text AA
@@ -2461,7 +2479,7 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   // to the plain B/W frame, which keeps text and image together.
   const bool needsAnyGrayscale = grayscaleEnabled && SETTINGS.textAntiAliasing;
 #else
-  const bool needsAnyGrayscale = grayscaleEnabled && (SETTINGS.textAntiAliasing || pageHasImages);
+  const bool needsAnyGrayscale = grayscaleEnabled && ((SETTINGS.textAntiAliasing && !rippleRequested) || pageHasImages);
 #endif
   const bool absoluteImageGrayscale = grayscaleEnabled && pageHasImages && !gpio.deviceIsX3() &&
                                       display.getController() == HalDisplay::Controller::UC8279 &&
@@ -2609,7 +2627,12 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
       ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh, overlapRefresh);
     }
 #else
-    ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh, overlapRefresh);
+    if (rippleRequested) {
+      const auto mode = ReaderUtils::consumeRefreshMode(pagesUntilFullRefresh);
+      renderer.displayBuffer(mode, renderer.pageTurnContext(pageTurnDirection > 0));
+    } else {
+      ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh, overlapRefresh);
+    }
 #endif
   }
   const auto tDisplay = millis();

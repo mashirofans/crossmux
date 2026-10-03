@@ -615,10 +615,11 @@ void SleepActivity::renderCustomSleepScreen() const {
   renderDefaultSleepScreen();
 }
 
-// Sleep screens paint with a single HALF refresh (stock parity): the OEM X4
-// firmware's only clean refresh in normal operation is the single-pass 0xD7
-// sequence, used once for the sleep image. It never runs the multi-flash GC
-// waveform (0xF7) that FULL_REFRESH selects (#2471's blinking complaint).
+// Sleep screens paint opaque B/W content with one FULL refresh so residual charge from the
+// reader cannot show through the wallpaper. Transparent overlays retain the
+// current frame and stay on HALF, while grayscale images keep the HALF base
+// required by their calibrated gray nudge LUT (a FULL base causes blotchy gray
+// areas on X4).
 void SleepActivity::renderDefaultSleepScreen() const {
   GUI.drawSplash(renderer, tr(STR_SLEEPING));
 
@@ -627,7 +628,7 @@ void SleepActivity::renderDefaultSleepScreen() const {
     renderer.invertScreen();
   }
 
-  renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+  renderer.displayBuffer(HalDisplay::FULL_REFRESH);
 }
 
 void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap, const bool preserveBackground,
@@ -662,7 +663,8 @@ void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap, const bool pre
   }
 
   if (!renderer.drawBitmap(bitmap, x, y, pageWidth, pageHeight, cropX, cropY, preserveBackground)) {
-    renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+    renderer.displayBuffer(!hasGreyscale && !preserveBackground ? HalDisplay::FULL_REFRESH
+                                                                  : HalDisplay::HALF_REFRESH);
     return;
   }
 
@@ -681,7 +683,10 @@ void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap, const bool pre
     // the differential nudge then lands unevenly (blotchy noise in gray areas).
     renderer.displayGrayscaleBase(HalDisplay::HALF_REFRESH);
   } else {
-    renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+    // A full clean waveform is appropriate only for an opaque B/W image. A
+    // transparent overlay must preserve the retained background, and the
+    // grayscale path above needs the calibrated HALF base.
+    renderer.displayBuffer(preserveBackground ? HalDisplay::HALF_REFRESH : HalDisplay::FULL_REFRESH);
   }
 
   if (hasGreyscale) {
@@ -896,5 +901,5 @@ void SleepActivity::renderLastScreenSleepScreen() const {
 
 void SleepActivity::renderBlankSleepScreen() const {
   renderer.clearScreen();
-  renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+  renderer.displayBuffer(HalDisplay::FULL_REFRESH);
 }

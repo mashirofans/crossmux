@@ -36,6 +36,10 @@ class EpubReaderActivity final : public ReaderActivity {
   unsigned long pageTurnDuration = 0UL;
   uint8_t pageTurnRate = 15;
   int8_t pendingManualTurn = 0;
+  // Non-zero only for the next foreground page render after a successful turn.
+  // Read Pico consumes it as a request-scoped ripple direction; jumps and
+  // reflows leave it clear and use the ordinary refresh path.
+  int8_t pendingPageTurnDirection = 0;
   bool pendingPercentJump = false;
   float pendingSpineProgress = 0.0f;
   bool pendingScreenshot = false;
