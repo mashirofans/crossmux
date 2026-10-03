@@ -604,12 +604,20 @@ bool JpegToBmpConverter::jpegFileToBmpStreamInternal(HalFile& jpegFile, Print& b
 
   LOG_DBG("JPG", "JPEG dimensions: %dx%d", srcWidth, srcHeight);
 
-  constexpr int MAX_IMAGE_WIDTH = 2048;
-  constexpr int MAX_IMAGE_HEIGHT = 3072;
+  // Source covers are decoded with JPEGDEC's 1/2, 1/4 or 1/8 DCT scale before
+  // the row converter allocates its working buffers. Allow common 2250px and
+  // 3000px ebook covers while keeping the generated BMP bounded to the panel
+  // target below.
+  constexpr int MAX_SOURCE_WIDTH = 4096;
+  constexpr int MAX_SOURCE_HEIGHT = 4096;
+  constexpr uint32_t MAX_SOURCE_PIXELS = 16u * 1024u * 1024u;
+  constexpr int MAX_OUTPUT_WIDTH = 2048;
+  constexpr int MAX_OUTPUT_HEIGHT = 3072;
 
-  if (srcWidth <= 0 || srcHeight <= 0 || srcWidth > MAX_IMAGE_WIDTH || srcHeight > MAX_IMAGE_HEIGHT) {
-    LOG_DBG("JPG", "Image too large or invalid (%dx%d), max supported: %dx%d", srcWidth, srcHeight, MAX_IMAGE_WIDTH,
-            MAX_IMAGE_HEIGHT);
+  if (srcWidth <= 0 || srcHeight <= 0 || srcWidth > MAX_SOURCE_WIDTH || srcHeight > MAX_SOURCE_HEIGHT ||
+      static_cast<uint64_t>(srcWidth) * static_cast<uint64_t>(srcHeight) > MAX_SOURCE_PIXELS) {
+    LOG_DBG("JPG", "Image too large or invalid (%dx%d), max supported: %dx%d / %u pixels", srcWidth, srcHeight,
+            MAX_SOURCE_WIDTH, MAX_SOURCE_HEIGHT, static_cast<unsigned>(MAX_SOURCE_PIXELS));
     return false;
   }
 
@@ -664,7 +672,7 @@ bool JpegToBmpConverter::jpegFileToBmpStreamInternal(HalFile& jpegFile, Print& b
   CheckedBmpOutput checkedOutput(bmpOut);
   // Write BMP header with output dimensions
   int bytesPerRow = 0;
-  if (outWidth <= 0 || outHeight <= 0 || outWidth > MAX_IMAGE_WIDTH || outHeight > MAX_IMAGE_HEIGHT) return false;
+  if (outWidth <= 0 || outHeight <= 0 || outWidth > MAX_OUTPUT_WIDTH || outHeight > MAX_OUTPUT_HEIGHT) return false;
   switch (output) {
     case Output::Gray8:
       writeBmpHeader8bit(checkedOutput, outWidth, outHeight);

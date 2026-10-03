@@ -72,7 +72,6 @@
 #include "util/ButtonNavigator.h"
 #include "util/ScreenshotUtil.h"
 #include "util/TimeUtils.h"
-#include "util/UiAntiAliasedRender.h"
 
 namespace {
 static_assert(static_cast<uint8_t>(ImageDitherMode::None) == CrossPointSettings::IMAGE_GRAYSCALE_OFF &&
@@ -3065,23 +3064,23 @@ void EpubReaderActivity::discardOverlayPage() {
 // the chrome answers taps and buttons the moment it is visible instead of only
 // after a blocking displayBuffer() returns. Caller must hold the RenderLock.
 void EpubReaderActivity::pushOverlayRefresh() {
-  const bool useUiAntiAliasing = overlayPageStored && !overlayPopup.isActive() && SETTINGS.uiAntiAliasing != 0 &&
-                                 !renderer.isInverted() && renderer.grayscaleCapabilities().supported();
-  if (useUiAntiAliasing) {
-    // The saved page is the clean frame under the toolbar. Re-seed the BW
-    // framebuffer before uiAa::display() stores it and paints the toolbar in
-    // both selector planes; otherwise the toolbar's old solid-BW pixels would
-    // be mistaken for the AA base.
+  // The toolbar is an opaque sheet over the page. The generic UI AA helper
+  // deliberately skips solid fills in selector planes so text can be blended
+  // over an existing background; using it here therefore leaves the page
+  // visible through the sheet and makes the toolbar look like a residual.
+  // Keep this chrome as a complete B/W frame and use the normal e-paper
+  // waveform instead.
+  if (overlayPageStored) {
+    // A grayscale reader page leaves the controller's differential baseline
+    // holding selector-plane data. Seed it with the clean page before sending
+    // the opaque toolbar; otherwise a shadow-free FAST/HALF update compares
+    // against a gray plane and paints the chrome like a residual.
     settleOverlayRefresh();
     renderer.restoreBwBuffer(/*resyncPanelBaseline=*/false);
-    if (renderer.storeBwBuffer()) {
-      uiAa::display(renderer, [this] { renderOverlay(); });
-      overlayCleanRefreshPending = false;
-      return;
-    }
-    // If the temporary BW snapshot cannot be allocated, keep the readable
-    // solid toolbar path instead of dropping the overlay entirely.
+    renderer.cleanupGrayscaleWithFrameBuffer();
+    overlayPageStored = renderer.storeBwBuffer();
     renderOverlay();
+    if (overlayPopup.isActive()) overlayPopup.render(renderer);
   }
 
   const HalDisplay::RefreshMode refreshMode = overlayCleanRefreshPending ? HalDisplay::HALF_REFRESH

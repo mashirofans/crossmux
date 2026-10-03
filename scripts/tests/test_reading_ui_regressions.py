@@ -33,6 +33,22 @@ def run_cpp(program, include_dirs=(), defines=()):
 
 
 class ReadingUiRegressionTest(unittest.TestCase):
+    def test_reader_toolbar_uses_opaque_bw_chrome(self):
+        reader = (ROOT / 'src/activities/reader/EpubReaderActivity.cpp').read_text()
+
+        # FreeInkUI's AA pass intentionally leaves opaque fills out of selector
+        # planes. The reader toolbar is an opaque sheet, so routing it through
+        # uiAa would expose the page underneath and look like residual chrome.
+        push = reader[reader.index('void EpubReaderActivity::pushOverlayRefresh()'):]
+        push = push[:push.index('// Wait out a pending deferred overlay refresh')]
+        self.assertNotIn('uiAa::display', push)
+        self.assertIn('renderer.displayBufferAsync(refreshMode);', push)
+        self.assertIn('overlayCleanRefreshPending ? HalDisplay::HALF_REFRESH', push)
+        self.assertLess(push.index('renderer.restoreBwBuffer(/*resyncPanelBaseline=*/false);'),
+                        push.index('renderer.cleanupGrayscaleWithFrameBuffer();'))
+        self.assertLess(push.index('renderer.cleanupGrayscaleWithFrameBuffer();'),
+                        push.index('renderer.storeBwBuffer();'))
+
     def test_ui_aa_keeps_readpico_selector_background_untouched(self):
         helper = (ROOT / 'src/util/UiAntiAliasedRender.h').read_text()
         gfx = (ROOT / 'lib/GfxRenderer/GfxRenderer.cpp').read_text()
