@@ -135,7 +135,7 @@ void ReaderToolbarUi::buildToolRow(UiScreen& screen, const fui::LayoutAnchor anc
     const fui::Rect slot{static_cast<int16_t>(row.x + slotW * i), row.y, slotW, row.height};
     if (i == model_.activeTool) {
       screen.target().stroke(slot.inset(fui::Insets{4, kToolPillInset, 4, kToolPillInset}),
-                             fui::Paint::solid(fui::Color::Black), 2, pillRadius);
+                             fui::Paint::solid(fui::Color::Black), 2, std::max<uint8_t>(pillRadius, 12));
     }
     const int labelHeight = screen.target().lineHeight(labelStyle.font);
     const int iconLabelGap = std::max(4, tokens.spaceSm / 2);
@@ -165,6 +165,8 @@ void ReaderToolbarUi::buildToolbar(UiScreen& screen) {
   fui::SheetProps sheetProps;
   sheetProps.anchor = fui::SheetEdge::Bottom;
   sheetProps.dismissAction = ACTION_DISMISS;
+  sheetProps.radius = UiHighDpiProfile::enabled ? 16 : 12;
+  sheetProps.ruleWidth = 0;
   // Grabber air matches the frontlight panel's card language (spaceLg around
   // the grabber, spaceMd more toward the free edge) so the two sheets read as
   // the same family.
@@ -172,7 +174,14 @@ void ReaderToolbarUi::buildToolbar(UiScreen& screen) {
   sheetProps.grabberInset = static_cast<int16_t>(tokens.spaceLg + tokens.spaceMd);
   const int16_t grabberBand =
       static_cast<int16_t>(sheetProps.grabberMargin + sheetProps.grabberHeight + sheetProps.grabberInset);
-  screen.sheet(sheetProps, static_cast<int16_t>(contentH + grabberBand));
+  const fui::Rect sheetRect = screen.sheet(sheetProps, static_cast<int16_t>(contentH + grabberBand));
+  const int16_t ruleInset = std::max<int16_t>(tokens.spaceLg, 12);
+  const int16_t ruleHeight = UiHighDpiProfile::enabled ? 3 : 2;
+  const int16_t ruleWidth = static_cast<int16_t>(sheetRect.width - ruleInset * 2);
+  if (ruleWidth > 0) {
+    screen.target().fill(fui::Rect{static_cast<int16_t>(sheetRect.x + ruleInset), sheetRect.y, ruleWidth, ruleHeight},
+                         fui::Paint::solid(fui::Color::Black), static_cast<uint8_t>(ruleHeight / 2));
+  }
   screen.insetContent(fui::Insets{0, tokens.spaceLg, 0, tokens.spaceLg});
   screen.spacer(tokens.spaceMd);
 
@@ -192,7 +201,7 @@ void ReaderToolbarUi::buildToolbar(UiScreen& screen) {
     stepProps_.styles.normal.foreground = fui::Paint::solid(fui::Color::Black);
     stepProps_.styles.normal.border = fui::Paint::solid(fui::Color::Black);
     stepProps_.styles.normal.borderWidth = 1;
-    stepProps_.styles.normal.radius = tokens.controlRadius;
+    stepProps_.styles.normal.radius = UiHighDpiProfile::enabled ? 12 : 10;
     stepProps_.styles.selected = stepProps_.styles.normal;
     stepProps_.styles.focused = stepProps_.styles.normal;
     stepProps_.styles.disabled = stepProps_.styles.normal;
@@ -252,6 +261,8 @@ void ReaderToolbarUi::buildPanel(UiScreen& screen) {
   fui::SheetProps sheetProps;
   sheetProps.anchor = fui::SheetEdge::Bottom;
   sheetProps.dismissAction = ACTION_DISMISS;  // tap the page above the sheet = back to the toolbar
+  sheetProps.radius = UiHighDpiProfile::enabled ? 16 : 12;
+  sheetProps.ruleWidth = 0;
   // Same grabber air as the toolbar sheet / frontlight panel.
   sheetProps.grabberMargin = tokens.spaceLg;
   sheetProps.grabberInset = static_cast<int16_t>(tokens.spaceLg + tokens.spaceMd);
@@ -279,7 +290,14 @@ void ReaderToolbarUi::buildPanel(UiScreen& screen) {
   if (static_cast<int16_t>(chrome + (sheetRows + 1) * rowStride - rowGap) <= cap) ++sheetRows;
   if (model_.itemCount > 0 && sheetRows > model_.itemCount) sheetRows = model_.itemCount;
   if (sheetRows < 1) sheetRows = 1;
-  screen.sheet(sheetProps, static_cast<int16_t>(chrome + sheetRows * rowStride - rowGap));
+  const fui::Rect sheetRect = screen.sheet(sheetProps, static_cast<int16_t>(chrome + sheetRows * rowStride - rowGap));
+  const int16_t ruleInset = std::max<int16_t>(tokens.spaceLg, 12);
+  const int16_t ruleHeight = UiHighDpiProfile::enabled ? 3 : 2;
+  const int16_t ruleWidth = static_cast<int16_t>(sheetRect.width - ruleInset * 2);
+  if (ruleWidth > 0) {
+    screen.target().fill(fui::Rect{static_cast<int16_t>(sheetRect.x + ruleInset), sheetRect.y, ruleWidth, ruleHeight},
+                         fui::Paint::solid(fui::Color::Black), static_cast<uint8_t>(ruleHeight / 2));
+  }
   // No blanket side inset: Screen::list() draws in the content band, and the
   // scroll track must reach the sheet's edge like a full-screen list's does.
   // The title insets itself; the rows inset via rowInset below.
