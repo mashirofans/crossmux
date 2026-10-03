@@ -370,8 +370,9 @@ inline const std::vector<SettingInfo>& getBaseSettingsList() {
                           StrId::STR_CAT_READER),
 #if FREEINK_DEVICE_READPICO || defined(SIMULATOR_DEVICE_READPICO)
         SettingInfo::Enum(StrId::STR_PAGE_TURN_EFFECT, &CrossPointSettings::readerPageTurnEffect,
-                          {StrId::STR_DEFAULT_VALUE, StrId::STR_PAGE_TURN_EFFECT_RIPPLE}, "readerPageTurnEffect",
-                          StrId::STR_CAT_READER),
+                          {StrId::STR_DEFAULT_VALUE, StrId::STR_PAGE_TURN_EFFECT_RIPPLE,
+                           StrId::STR_PAGE_TURN_EFFECT_RIPPLE_AA},
+                          "readerPageTurnEffect", StrId::STR_CAT_READER),
 #endif
         // --- Controls ---
         SettingInfo::Enum(StrId::STR_SIDE_BTN_LAYOUT, &CrossPointSettings::sideButtonLayout,

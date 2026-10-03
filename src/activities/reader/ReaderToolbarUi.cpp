@@ -305,6 +305,7 @@ void ReaderToolbarUi::buildPanel(UiScreen& screen) {
   // Title line: panel name left, page position right when the list spans pages.
   {
     fui::TextStyle titleStyle = tokens.titleText;
+    if (model_.contentsPanel) titleStyle.font = tokens.bodyText.font;
     titleStyle.bold = true;
     const fui::Rect line =
         screen.takeTop(titleH, tokens.spaceMd).inset(fui::Insets{0, tokens.spaceLg, 0, tokens.spaceLg});

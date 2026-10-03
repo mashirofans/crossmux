@@ -2477,18 +2477,23 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   const int8_t pageTurnDirection = pendingPageTurnDirection;
   pendingPageTurnDirection = 0;
 #if FREEINK_DEVICE_READPICO
-  // The spatial ripple is a B/W/GL16 turn. It deliberately gives up text AA
-  // for text-only pages during this one render; image pages, periodic cleanup,
-  // and explicit refreshes keep the normal grayscale path instead.
-  const bool rippleRequested = SETTINGS.readerPageTurnEffect == CrossPointSettings::PAGE_TURN_EFFECT_RIPPLE &&
-                               pageTurnDirection != 0 && !pageHasImages && !cleanImageBasePending &&
-                               !renderer.isInverted();
+  // Ripple and ripple+AA share the same direction-aware display context. The
+  // AA variant keeps the reader's normal font and selector planes, while the
+  // plain ripple variant deliberately stays on the cheaper B/W path.
+  const bool rippleEffectSelected =
+      SETTINGS.readerPageTurnEffect == CrossPointSettings::PAGE_TURN_EFFECT_RIPPLE ||
+      SETTINGS.readerPageTurnEffect == CrossPointSettings::PAGE_TURN_EFFECT_RIPPLE_AA;
+  const bool rippleRequested = rippleEffectSelected && pageTurnDirection != 0 && !pageHasImages &&
+                               !cleanImageBasePending && !renderer.isInverted();
 #else
   constexpr bool rippleRequested = false;
 #endif
   // Night mode renders crisp B/W; the SDK disables every grayscale display path.
   const bool grayscaleEnabled = !renderer.isInverted();
-  const bool needsTextGrayscale = grayscaleEnabled && SETTINGS.textAntiAliasing && !rippleRequested;
+  const bool rippleAntiAliasingRequested =
+      rippleRequested && SETTINGS.readerPageTurnEffect == CrossPointSettings::PAGE_TURN_EFFECT_RIPPLE_AA;
+  const bool needsTextGrayscale = grayscaleEnabled && SETTINGS.textAntiAliasing &&
+                                  (!rippleRequested || rippleAntiAliasingRequested);
 #if FREEINK_DEVICE_EEGO_A4
   // A4 single-refresh design: displayGrayBuffer() replaces the B/W base on the
   // panel, so whatever the gray pass draws IS the final frame. With text AA
@@ -2625,7 +2630,10 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
     LOG_DBG("ERS", "UC8279 image page: absolute quality waveform");
     pagesUntilFullRefresh = 1;
   } else if (combinedGrayscaleBase) {
-    ReaderUtils::displayBaseWithRefreshCycle(renderer, pagesUntilFullRefresh, manualRefreshPending);
+    const auto context = rippleAntiAliasingRequested
+                             ? renderer.pageTurnContext(pageTurnDirection > 0)
+                             : DisplayRefreshContext::TextOnlyAntiAliasing;
+    ReaderUtils::displayBaseWithRefreshCycle(renderer, pagesUntilFullRefresh, manualRefreshPending, context);
   } else if (pageHasImages) {
     // Image pages use one base refresh before the grayscale pass. FAST leaves
     // the panel receptive to the gray waveform; pending cleanup still honors
@@ -3259,6 +3267,7 @@ void EpubReaderActivity::renderOverlay() {
   model.selectedIndex = panelCursorShown ? panelIndex : -1;
   if (overlay == Overlay::Contents) {
     model.panelTitle = tr(STR_TOOL_CONTENTS);
+    model.contentsPanel = true;
     model.itemCount = epub->getTocItemsCount();
     model.rowText = [this](int i) {
       const auto item = epub->getTocItem(i);

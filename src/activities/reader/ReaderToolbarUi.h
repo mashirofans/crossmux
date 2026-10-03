@@ -37,6 +37,9 @@ class ReaderToolbarUi : public UiAppHost {
     int progressPermille = 0;        // 0..1000 book progress (scrub handle)
     // Panel
     const char* panelTitle = nullptr;
+    // Contents keeps its heading on the same body face as chapter rows. The
+    // other panels retain the larger title face used by the rest of the UI.
+    bool contentsPanel = false;
     int itemCount = 0;
     int selectedIndex = -1;  // row the buttons' cursor sits on; -1 = none shown
     std::function<std::string(int)> rowText;

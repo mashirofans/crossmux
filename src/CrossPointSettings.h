@@ -290,6 +290,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   enum READER_PAGE_TURN_EFFECT {
     PAGE_TURN_EFFECT_DEFAULT = 0,
     PAGE_TURN_EFFECT_RIPPLE = 1,
+    PAGE_TURN_EFFECT_RIPPLE_AA = 2,
     READER_PAGE_TURN_EFFECT_COUNT
   };
 

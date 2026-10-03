@@ -33,6 +33,27 @@ def run_cpp(program, include_dirs=(), defines=()):
 
 
 class ReadingUiRegressionTest(unittest.TestCase):
+    def test_reader_contents_heading_uses_body_font(self):
+        toolbar = (ROOT / 'src/activities/reader/ReaderToolbarUi.cpp').read_text()
+        reader = (ROOT / 'src/activities/reader/EpubReaderActivity.cpp').read_text()
+
+        self.assertIn('if (model_.contentsPanel) titleStyle.font = tokens.bodyText.font;', toolbar)
+        contents = reader[reader.index('if (overlay == Overlay::Contents) {'):]
+        self.assertIn('model.contentsPanel = true;', contents)
+
+    def test_ripple_antialiasing_keeps_the_ripple_refresh_context(self):
+        settings = (ROOT / 'src/CrossPointSettings.h').read_text()
+        settings_list = (ROOT / 'src/SettingsList.h').read_text()
+        reader = (ROOT / 'src/activities/reader/EpubReaderActivity.cpp').read_text()
+        refresh = (ROOT / 'src/activities/reader/ReaderRefresh.h').read_text()
+
+        self.assertIn('PAGE_TURN_EFFECT_RIPPLE_AA = 2', settings)
+        self.assertIn('StrId::STR_PAGE_TURN_EFFECT_RIPPLE_AA', settings_list)
+        self.assertIn('const bool rippleAntiAliasingRequested', reader)
+        self.assertIn('renderer.pageTurnContext(pageTurnDirection > 0)', reader)
+        self.assertIn('const DisplayRefreshContext context =', refresh)
+        self.assertIn('renderer.displayGrayscaleBase(mode, context);', refresh)
+
     def test_reader_toolbar_uses_opaque_bw_chrome(self):
         reader = (ROOT / 'src/activities/reader/EpubReaderActivity.cpp').read_text()
 

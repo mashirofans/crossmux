@@ -50,7 +50,9 @@ inline void displayWithRefreshCycle(const GfxRenderer& renderer, int& pagesUntil
 // out as one waveform — displaying the base separately makes the gray pass
 // re-drive the whole text body (a visible flash). Other panels display
 // normally. Same refresh-cadence bookkeeping as displayWithRefreshCycle.
-inline void displayBaseWithRefreshCycle(const GfxRenderer& renderer, int& pagesUntilFullRefresh, bool manualRefresh) {
+inline void displayBaseWithRefreshCycle(
+    const GfxRenderer& renderer, int& pagesUntilFullRefresh, bool manualRefresh,
+    const DisplayRefreshContext context = DisplayRefreshContext::TextOnlyAntiAliasing) {
   if (!renderer.supportsTextOnlyCombinedBase()) {
     displayWithRefreshCycle(renderer, pagesUntilFullRefresh);
     return;
@@ -73,6 +75,6 @@ inline void displayBaseWithRefreshCycle(const GfxRenderer& renderer, int& pagesU
   // cadence chose, so a real reset still happens on schedule.
   if (mode == HalDisplay::FAST_REFRESH) mode = HalDisplay::HALF_REFRESH;
 #endif
-  renderer.displayGrayscaleBase(mode, DisplayRefreshContext::TextOnlyAntiAliasing);
+  renderer.displayGrayscaleBase(mode, context);
 }
 }  // namespace ReaderUtils
