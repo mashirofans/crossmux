@@ -1088,6 +1088,8 @@ STR_READING_PROFILE_ENGAGEMENT_DESC: "你在一周内回来阅读的频繁程度
 STR_READING_PROFILE_HABIT_DESC: "你阅读的规律程度，以及达成每日目标的频率。"
 STR_READING_PROFILE_STABILITY_DESC: "你的阅读在一周内分布得有多均匀。最高单日占比指一周阅读中最集中一天所占的比例。"
 STR_READING_STATS: "阅读统计"
+STR_READING_TICKET_TITLE: "Pico / 阅读票根"
+STR_READING_TICKET_FOOTER: "在每一页里，留下时间的凭证"
 STR_READING_TIME: "阅读时长"
 STR_READ_STREAK: "连续阅读"
 STR_SCORE: "得分"

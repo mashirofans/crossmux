@@ -1119,6 +1119,8 @@ STR_READING_PROFILE_ENGAGEMENT_DESC: "How often you came back to read during the
 STR_READING_PROFILE_HABIT_DESC: "How consistently you showed up to read and how often you hit your daily goal."
 STR_READING_PROFILE_STABILITY_DESC: "How evenly your reading is spread across the week. Top Day Weight is the share of weekly reading done on your strongest single day."
 STR_READING_STATS: "Reading Stats"
+STR_READING_TICKET_TITLE: "Pico / Reading Ticket"
+STR_READING_TICKET_FOOTER: "A receipt for the time you left on each page"
 STR_READING_TIME: "Reading Time"
 STR_READ_STREAK: "Read Streak"
 STR_SCORE: "Score"

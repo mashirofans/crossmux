@@ -156,6 +156,23 @@ void drawTicketFrame(const GfxRenderer& renderer, const Rect& rect) {
                            NOTCH_RADIUS * 2, NOTCH_RADIUS, Color::White);
 }
 
+void drawPerforatedTicket(const GfxRenderer& renderer, const Rect& rect) {
+  if (rect.width <= 0 || rect.height <= 0) return;
+
+  constexpr int NOTCH_RADIUS = 11;
+  constexpr int NOTCH_STEP = 46;
+  renderer.fillRectDither(rect.x, rect.y, rect.width, rect.height, Color::LightGray);
+  renderer.fillRect(rect.x, rect.y, rect.width, rect.height, false);
+  renderer.drawRect(rect.x, rect.y, rect.width, rect.height, 1, true);
+
+  for (int x = rect.x + 28; x < rect.x + rect.width - 20; x += NOTCH_STEP) {
+    renderer.fillRoundedRect(x - NOTCH_RADIUS, rect.y - NOTCH_RADIUS, NOTCH_RADIUS * 2, NOTCH_RADIUS * 2,
+                             NOTCH_RADIUS, Color::LightGray);
+    renderer.fillRoundedRect(x - NOTCH_RADIUS, rect.y + rect.height - 1 - NOTCH_RADIUS, NOTCH_RADIUS * 2,
+                             NOTCH_RADIUS * 2, NOTCH_RADIUS, Color::LightGray);
+  }
+}
+
 void drawTicketDivider(const GfxRenderer& renderer, const int x, const int y, const int height) {
   if (height <= 0) return;
   for (int py = y; py < y + height; py += 4) renderer.drawPixel(x, py, true);
@@ -666,100 +683,75 @@ void ReadingStatsActivity::renderInx() {
   const Rect content{mainContent.x + 18, mainContent.y + 6, mainContent.width - 36,
                      std::max(1, mainContent.height - 12)};
   const auto& books = READING_STATS.getBooks();
-  drawTicketFrame(renderer, ticket);
   const int pageTitleHeight = renderer.getLineHeight(UI_12_FONT_ID);
   const int bookTitleHeight = renderer.getLineHeight(UI_12_FONT_ID);
   const int bodyHeight = renderer.getLineHeight(UI_10_FONT_ID);
   const int cellHeight = statsCellHeight(renderer);
 
   if (selectedIndex == 0 || books.empty()) {
-    int top = content.y;
-    if (usesMainTabBar()) {
-      drawCenteredClippedText(renderer, UI_12_FONT_ID, Rect{content.x, top + 4, content.width, pageTitleHeight},
-                              tr(STR_READING_STATS), EpdFontFamily::BOLD);
-      top += pageTitleHeight + 8;
-    }
-    const int availableHeight = std::max(1, content.y + content.height - top);
-    const int gridHeight = cellHeight * 2;
-    const int footerHeight = cellHeight;
-    const int flexibleHeight = std::max(2, availableHeight - gridHeight - footerHeight);
-    const int recentMinimumHeight = books.empty() ? bodyHeight + 16 : bookTitleHeight + bodyHeight * 2 + 32;
-    const int recentHeight = std::min(flexibleHeight - 1, std::max(flexibleHeight * 43 / 100, recentMinimumHeight));
-    const int donutHeight = flexibleHeight - recentHeight;
-    const Rect recent{content.x, top, content.width, recentHeight};
-    const Rect grid{content.x, recent.y + recent.height, content.width, gridHeight};
-    const Rect donut{content.x, grid.y + grid.height, content.width, donutHeight};
-    const Rect footer{content.x, donut.y + donut.height, content.width, footerHeight};
+    const Rect paper{mainContent.x + 18, mainContent.y + 8, std::max(1, mainContent.width - 36),
+                     std::max(1, mainContent.height - 16)};
+    drawPerforatedTicket(renderer, paper);
+    const Rect inner{paper.x + 24, paper.y + 22, std::max(1, paper.width - 48),
+                     std::max(1, paper.height - 44)};
+    const int ticketTitleHeight = renderer.getLineHeight(UI_12_FONT_ID);
+    const std::string dateText = HeaderDateUtils::getDisplayDateText();
+    drawClippedText(renderer, UI_12_FONT_ID, Rect{inner.x, inner.y, inner.width * 2 / 3, ticketTitleHeight},
+                    tr(STR_READING_TICKET_TITLE), EpdFontFamily::BOLD);
+    drawClippedText(renderer, SMALL_FONT_ID,
+                    Rect{inner.x + inner.width * 2 / 3, inner.y + 2, inner.width / 3, ticketTitleHeight},
+                    dateText.c_str());
+    const int headerRuleY = inner.y + ticketTitleHeight + 14;
+    renderer.drawLine(inner.x, headerRuleY, inner.x + inner.width, headerRuleY, 1, true);
 
+    const int heroTop = headerRuleY + 18;
+    const int heroHeight = std::max(1, inner.height * 46 / 100);
+    const Rect hero{inner.x, heroTop, inner.width, heroHeight};
     if (books.empty()) {
-      const int emptyHeight = renderer.getLineHeight(UI_12_FONT_ID);
-      drawCenteredClippedText(
-          renderer, UI_12_FONT_ID,
-          Rect{recent.x, recent.y + std::max(0, (recent.height - emptyHeight) / 2), recent.width, emptyHeight},
-          tr(STR_NO_READING_STATS));
+      drawCenteredClippedText(renderer, UI_12_FONT_ID, hero, tr(STR_NO_READING_STATS));
     } else {
       const ReadingBookStats& recentBook = books.front();
-      const auto coverSize = InxCoverGeometry::fit(recent.width * 28 / 100, recent.height - 12);
-      const Rect cover{recent.x + 4, recent.y + (recent.height - coverSize.height) / 2, coverSize.width,
-                       coverSize.height};
+      const int titleHeight = renderer.getLineHeight(UI_12_FONT_ID);
+      drawCenteredClippedText(renderer, UI_12_FONT_ID, Rect{hero.x, hero.y, hero.width, titleHeight},
+                              titleOf(recentBook), EpdFontFamily::BOLD);
+      const auto coverSize = InxCoverGeometry::fit(hero.width * 39 / 100, hero.height - titleHeight - 34);
+      const Rect cover{hero.x + (hero.width - coverSize.width) / 2,
+                       hero.y + titleHeight + 12 + std::max(0, hero.height - titleHeight - 12 - coverSize.height) / 2,
+                       coverSize.width, coverSize.height};
       renderedCoverMissing = !drawCover(renderer, recentBook, cover);
-
-      const int textX = cover.x + cover.width + 18;
-      const int textWidth = recent.x + recent.width - textX;
-      const int titleY = recent.y + 8;
-      drawClippedText(renderer, UI_12_FONT_ID, Rect{textX, titleY, textWidth, bookTitleHeight},
-                      titleOf(recentBook), EpdFontFamily::BOLD);
-      if (!recentBook.author.empty()) {
-        drawClippedText(renderer, UI_10_FONT_ID,
-                        Rect{textX, titleY + bookTitleHeight + INX_TEXT_GAP, textWidth, bodyHeight},
-                        recentBook.author.c_str());
-      }
-      char progress[12];
-      snprintf(progress, sizeof(progress), "%u%%", static_cast<unsigned>(recentBook.lastProgressPercent));
-      const int progressTextWidth = renderer.getTextWidth(UI_10_FONT_ID, progress, EpdFontFamily::BOLD);
-      const int progressY = recent.y + recent.height - bodyHeight - 16;
-      drawClippedText(renderer, UI_10_FONT_ID,
-                      Rect{textX, progressY, std::max(1, textWidth - progressTextWidth - 8), bodyHeight},
-                      tr(STR_BOOK_PROGRESS));
-      drawClippedText(renderer, UI_10_FONT_ID,
-                      Rect{textX + textWidth - progressTextWidth, progressY, progressTextWidth, bodyHeight}, progress,
-                      EpdFontFamily::BOLD);
-      drawMiniProgressBar(renderer, Rect{textX, progressY + bodyHeight + INX_TEXT_GAP, textWidth, 8},
+      drawMiniProgressBar(renderer, Rect{hero.x + hero.width / 5, hero.y + hero.height - 12, hero.width * 3 / 5, 8},
                           recentBook.lastProgressPercent);
     }
 
-    const uint32_t sessions =
-        std::accumulate(books.begin(), books.end(), uint32_t{0},
-                        [](const uint32_t total, const ReadingBookStats& book) { return total + book.sessions; });
-    char totalTime[24];
-    char averageSession[24];
-    char sessionCount[16];
-    char streak[16];
-    formatDuration(READING_STATS.getTotalReadingMs(), totalTime, sizeof(totalTime));
-    formatDuration(InxStatisticsGeometry::averageSessionMs(READING_STATS.getTotalReadingMs(), sessions), averageSession,
-                   sizeof(averageSession));
-    snprintf(sessionCount, sizeof(sessionCount), "%u", static_cast<unsigned>(sessions));
-    snprintf(streak, sizeof(streak), "%u", static_cast<unsigned>(READING_STATS.getCurrentStreakDays()));
-    const char* values[] = {totalTime, averageSession, sessionCount, streak};
-    const char* labels[] = {tr(STR_TOTAL_TIME), tr(STR_AVG_SESSION), tr(STR_SESSIONS), tr(STR_READ_STREAK)};
-    drawStatsGrid(renderer, grid, 2, values, labels);
-
+    const int statsRuleY = hero.y + hero.height + 14;
+    renderer.drawLine(inner.x, statsRuleY, inner.x + inner.width, statsRuleY, 1, true);
     const int started = static_cast<int>(READING_STATS.getBooksStartedCount());
     const int finished = static_cast<int>(READING_STATS.getBooksFinishedCount());
-    const int completedPercent = started == 0 ? 0 : std::min(100, finished * 100 / started);
-    const int donutRadius = std::min(std::max(18, std::min(donut.width, donut.height) * 34 / 100),
-                                     std::max(18, std::min(donut.width, donut.height) / 2 - 4));
-    drawDonut(renderer, donut.x + donut.width / 2, donut.y + donut.height / 2, donutRadius,
-              static_cast<uint8_t>(completedPercent));
-
     char finishedText[16];
     char startedText[16];
     snprintf(finishedText, sizeof(finishedText), "%d", finished);
     snprintf(startedText, sizeof(startedText), "%d", started);
-    const char* footerValues[] = {finishedText, startedText};
-    const char* footerLabels[] = {tr(STR_BOOKS_FINISHED), tr(STR_BOOKS_STARTED)};
-    drawStatsGrid(renderer, footer, 1, footerValues, footerLabels);
+    const char* ticketValues[] = {finishedText, startedText};
+    const char* ticketLabels[] = {tr(STR_BOOKS_FINISHED), tr(STR_BOOKS_STARTED)};
+    const int metricHeight = cellHeight + 8;
+    drawStatsGrid(renderer, Rect{inner.x, statsRuleY + 4, inner.width, metricHeight}, 1, ticketValues, ticketLabels);
+
+    char todayText[48];
+    char totalText[48];
+    formatDuration(READING_STATS.getTodayReadingMs(), todayText, sizeof(todayText));
+    formatDuration(READING_STATS.getTotalReadingMs(), totalText, sizeof(totalText));
+    const std::string todayLine = std::string(tr(STR_READING_TIME)) + ": " + todayText;
+    const std::string totalLine = std::string(tr(STR_TOTAL_TIME)) + ": " + totalText;
+    const int detailY = statsRuleY + metricHeight + 18;
+    drawClippedText(renderer, UI_10_FONT_ID, Rect{inner.x, detailY, inner.width, bodyHeight}, todayLine.c_str());
+    drawClippedText(renderer, UI_10_FONT_ID, Rect{inner.x, detailY + bodyHeight + 8, inner.width, bodyHeight},
+                    totalLine.c_str());
+    const int footerRuleY = inner.y + inner.height - bodyHeight - 18;
+    renderer.drawLine(inner.x, footerRuleY, inner.x + inner.width, footerRuleY, 1, true);
+    drawClippedText(renderer, SMALL_FONT_ID, Rect{inner.x, footerRuleY + 10, inner.width, bodyHeight},
+                    tr(STR_READING_TICKET_FOOTER));
   } else {
+    drawTicketFrame(renderer, ticket);
     selectedIndex = InxStatisticsGeometry::clampView(selectedIndex, static_cast<int>(books.size()));
     const ReadingBookStats& book = books[selectedIndex - 1];
     const int footerHeight = bodyHeight + 8;
