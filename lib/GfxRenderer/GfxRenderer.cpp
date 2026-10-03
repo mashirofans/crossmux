@@ -311,6 +311,8 @@ int GfxRenderer::resolveTextFontId(const int fontId, const char* text, const Epd
   // on one face -- both call this function.
   const int effectiveFontId = resolveFontFamilyId(fontId);
 
+  if (strictFontId_ == fontId) return effectiveFontId;
+
   // Fallbacks stay keyed by the requested id; for a rebound id the entry names the
   // built-in family, which is exactly what the SD face should fall back to.
   const auto fbIt = fallbackFontMap_.find(fontId);

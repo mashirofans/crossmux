@@ -33,6 +33,14 @@ def run_cpp(program, include_dirs=(), defines=()):
 
 
 class ReadingUiRegressionTest(unittest.TestCase):
+    def test_reader_contents_sd_font_is_kept_for_the_whole_list(self):
+        renderer = (ROOT / 'lib/GfxRenderer/GfxRenderer.cpp').read_text()
+        reader = (ROOT / 'src/activities/reader/EpubReaderActivity.cpp').read_text()
+
+        self.assertIn('if (strictFontId_ == fontId) return effectiveFontId;', renderer)
+        self.assertIn('renderer.setStrictFont(UiHighDpiProfile::enabled ? UI_10_FONT_ID : UI_12_FONT_ID);', reader)
+        self.assertIn('renderer.clearStrictFont();', reader)
+
     def test_reader_contents_heading_uses_body_font(self):
         toolbar = (ROOT / 'src/activities/reader/ReaderToolbarUi.cpp').read_text()
         reader = (ROOT / 'src/activities/reader/EpubReaderActivity.cpp').read_text()
@@ -53,6 +61,13 @@ class ReadingUiRegressionTest(unittest.TestCase):
         self.assertIn('renderer.pageTurnContext(pageTurnDirection > 0)', reader)
         self.assertIn('const DisplayRefreshContext context =', refresh)
         self.assertIn('renderer.displayGrayscaleBase(mode, context);', refresh)
+
+    def test_ripple_antialiasing_does_not_depend_on_text_aa_toggle(self):
+        reader = (ROOT / 'src/activities/reader/EpubReaderActivity.cpp').read_text()
+
+        self.assertIn('const bool textGrayscaleRequested = SETTINGS.textAntiAliasing || rippleAntiAliasingRequested;', reader)
+        self.assertIn('const bool needsTextGrayscale = grayscaleEnabled && textGrayscaleRequested &&', reader)
+        self.assertIn('const bool needsAnyGrayscale = grayscaleEnabled && (needsTextGrayscale || pageHasImages);', reader)
 
     def test_reader_toolbar_uses_opaque_bw_chrome(self):
         reader = (ROOT / 'src/activities/reader/EpubReaderActivity.cpp').read_text()

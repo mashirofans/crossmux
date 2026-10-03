@@ -137,6 +137,10 @@ class GfxRenderer {
   // Ordered UI fallbacks: optional SD face, then the built-in CJK subset.
   // Resolve the whole string through one face for consistent draw/measure metrics.
   std::map<int, std::array<int, 2>> fallbackFontMap_;
+  // A scoped UI list can keep one selected face for every row instead of
+  // switching the complete run to a fallback family when one chapter is
+  // missing a glyph. Zero leaves normal fallback resolution unchanged.
+  mutable int strictFontId_ = 0;
   // fontId -> the family it should actually resolve to (see setPreferredFont()).
   std::map<int, int> preferredFontMap_;
   // The family a font id really resolves to (identity unless rebound). EVERY path that
@@ -245,6 +249,8 @@ class GfxRenderer {
   // every other target behaves exactly as before.
   void setPreferredFont(int fontId, int preferredFontId) { preferredFontMap_[fontId] = preferredFontId; }
   void clearPreferredFonts() { preferredFontMap_.clear(); }
+  void setStrictFont(int fontId) const { strictFontId_ = fontId; }
+  void clearStrictFont() const { strictFontId_ = 0; }
   // Ensure SD card font glyph data is loaded for the given text. Called from layout code
   // (which holds a const GfxRenderer&) before measuring word widths. Safe to call on non-SD fonts (no-op).
   // styleMask: bitmask of styles to prepare (bit 0=regular, 1=bold, 2=italic, 3=bold-italic).

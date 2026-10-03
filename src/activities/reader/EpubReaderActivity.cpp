@@ -2492,7 +2492,12 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   const bool grayscaleEnabled = !renderer.isInverted();
   const bool rippleAntiAliasingRequested =
       rippleRequested && SETTINGS.readerPageTurnEffect == CrossPointSettings::PAGE_TURN_EFFECT_RIPPLE_AA;
-  const bool needsTextGrayscale = grayscaleEnabled && SETTINGS.textAntiAliasing &&
+  // The dedicated ripple+AA effect is an explicit request for the grayscale
+  // selector planes. It must not silently depend on the separate text-AA
+  // preference; otherwise selecting the new page-turn mode still takes the
+  // plain B/W ripple path whenever that preference is off.
+  const bool textGrayscaleRequested = SETTINGS.textAntiAliasing || rippleAntiAliasingRequested;
+  const bool needsTextGrayscale = grayscaleEnabled && textGrayscaleRequested &&
                                   (!rippleRequested || rippleAntiAliasingRequested);
 #if FREEINK_DEVICE_EEGO_A4
   // A4 single-refresh design: displayGrayBuffer() replaces the B/W base on the
@@ -2502,9 +2507,9 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   // reported as "image pages show only the image, no text". When there is no
   // AA to render, skip the grayscale pipeline entirely: image pages fall back
   // to the plain B/W frame, which keeps text and image together.
-  const bool needsAnyGrayscale = grayscaleEnabled && SETTINGS.textAntiAliasing;
+  const bool needsAnyGrayscale = grayscaleEnabled && (needsTextGrayscale || pageHasImages);
 #else
-  const bool needsAnyGrayscale = grayscaleEnabled && ((SETTINGS.textAntiAliasing && !rippleRequested) || pageHasImages);
+  const bool needsAnyGrayscale = grayscaleEnabled && (needsTextGrayscale || pageHasImages);
 #endif
   const bool absoluteImageGrayscale = grayscaleEnabled && pageHasImages && !gpio.deviceIsX3() &&
                                       display.getController() == HalDisplay::Controller::UC8279 &&
@@ -3295,7 +3300,18 @@ void EpubReaderActivity::renderOverlay() {
     };
   }
   toolbarUi->setModel(model);
+  bool strictContentsFont = false;
+#if FREEINK_DEVICE_READPICO || defined(SIMULATOR_DEVICE_READPICO)
+  if (overlay == Overlay::Contents && SETTINGS.sdFontFamilyName[0] != '\0') {
+    const auto* family = sdFontSystem.registry().findFamily(SETTINGS.sdFontFamilyName);
+    const uint8_t bodyPointSize = UiHighDpiProfile::enabled ? 14 : 12;
+    const auto* bodyFace = family ? family->findNearestSize(bodyPointSize) : nullptr;
+    strictContentsFont = bodyFace != nullptr && bodyFace->pointSize == bodyPointSize;
+    if (strictContentsFont) renderer.setStrictFont(UiHighDpiProfile::enabled ? UI_10_FONT_ID : UI_12_FONT_ID);
+  }
+#endif
   toolbarUi->render();
+  if (strictContentsFont) renderer.clearStrictFont();
 }
 
 void EpubReaderActivity::handleOverlayInput() {
