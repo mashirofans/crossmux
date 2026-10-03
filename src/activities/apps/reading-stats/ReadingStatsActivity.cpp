@@ -14,7 +14,6 @@
 #include <numeric>
 #include <string>
 
-#include "AppMetricCard.h"
 #include "InxItemLayout.h"
 #include "ReadingStatsDetailActivity.h"
 #include "ReadingStatsExtendedActivity.h"
@@ -49,13 +48,6 @@ std::string getBookSubtitle(const ReadingBookStats& book) {
     return book.author;
   }
   return book.completed ? std::string(tr(STR_DONE)) : std::string(tr(STR_IN_PROGRESS));
-}
-
-void drawMetricCard(const GfxRenderer& renderer, const Rect& rect, const char* label, const std::string& value,
-                    const bool showCheck = false) {
-  AppMetricCard::Options options;
-  options.showCheck = showCheck;
-  AppMetricCard::draw(renderer, rect, label, value, options);
 }
 
 void drawMoreDetailsButton(const GfxRenderer& renderer, const Rect& rect, const bool selected) {
@@ -146,6 +138,67 @@ void drawCenteredClippedText(const GfxRenderer& renderer, const int fontId, cons
   const int textWidth = renderer.getTextWidth(fontId, text, style);
   GfxRenderer::ClipScope clip(renderer, rect.x, rect.y, rect.width, rect.height);
   renderer.drawText(fontId, rect.x + std::max(0, (rect.width - textWidth) / 2), rect.y, text, true, style);
+}
+
+void drawDottedLine(const GfxRenderer& renderer, int x1, int y1, int x2, int y2);
+
+void drawTicketFrame(const GfxRenderer& renderer, const Rect& rect) {
+  if (rect.width <= 0 || rect.height <= 0) return;
+
+  constexpr int NOTCH_RADIUS = 7;
+  renderer.fillRect(rect.x, rect.y, rect.width, rect.height, false);
+  renderer.drawRect(rect.x, rect.y, rect.width, rect.height, 2, true);
+
+  const int notchY = rect.y + rect.height / 2;
+  renderer.fillRoundedRect(rect.x - NOTCH_RADIUS + 1, notchY - NOTCH_RADIUS, NOTCH_RADIUS * 2,
+                           NOTCH_RADIUS * 2, NOTCH_RADIUS, Color::White);
+  renderer.fillRoundedRect(rect.x + rect.width - NOTCH_RADIUS - 1, notchY - NOTCH_RADIUS, NOTCH_RADIUS * 2,
+                           NOTCH_RADIUS * 2, NOTCH_RADIUS, Color::White);
+}
+
+void drawTicketDivider(const GfxRenderer& renderer, const int x, const int y, const int height) {
+  if (height <= 0) return;
+  for (int py = y; py < y + height; py += 4) renderer.drawPixel(x, py, true);
+}
+
+void drawTicketBarcode(const GfxRenderer& renderer, const Rect& rect) {
+  if (rect.width <= 0 || rect.height <= 0) return;
+  constexpr uint8_t bars[] = {1, 2, 1, 1, 3, 1, 2, 1, 1, 2, 3, 1, 1, 2, 1, 3, 1, 2, 1};
+  int x = rect.x;
+  for (const uint8_t bar : bars) {
+    const int width = std::max(1, static_cast<int>(bar));
+    if (x + width > rect.x + rect.width) break;
+    renderer.fillRect(x, rect.y, width, rect.height, true);
+    x += width + 1;
+  }
+}
+
+void drawTicketMetricGrid(const GfxRenderer& renderer, const Rect& rect, const char* const* values,
+                          const char* const* labels, const int count) {
+  if (count <= 0 || rect.width <= 0 || rect.height <= 0) return;
+  const int rows = (count + 1) / 2;
+  const int cellWidth = rect.width / 2;
+  const int cellHeight = std::max(1, rect.height / rows);
+  const int valueHeight = renderer.getLineHeight(UI_12_FONT_ID);
+  const int labelHeight = renderer.getLineHeight(SMALL_FONT_ID);
+  const int textHeight = valueHeight + INX_TEXT_GAP + labelHeight;
+
+  drawTicketDivider(renderer, rect.x + cellWidth, rect.y, rect.height);
+  for (int row = 1; row < rows; ++row) {
+    drawDottedLine(renderer, rect.x, rect.y + row * cellHeight, rect.x + rect.width - 1, rect.y + row * cellHeight);
+  }
+
+  for (int index = 0; index < count; ++index) {
+    const int column = index % 2;
+    const int row = index / 2;
+    const int cellTop = rect.y + row * cellHeight;
+    const int textY = cellTop + std::max(0, (cellHeight - textHeight) / 2);
+    const Rect valueRect{rect.x + column * cellWidth + 8, textY, cellWidth - 16, valueHeight};
+    drawCenteredClippedText(renderer, UI_12_FONT_ID, valueRect, values[index], EpdFontFamily::BOLD);
+    drawCenteredClippedText(renderer, SMALL_FONT_ID,
+                            Rect{valueRect.x, valueRect.y + valueHeight + INX_TEXT_GAP, valueRect.width, labelHeight},
+                            labels[index]);
+  }
 }
 
 void drawDottedLine(const GfxRenderer& renderer, const int x1, const int y1, const int x2, const int y2) {
@@ -505,9 +558,9 @@ void ReadingStatsActivity::render(RenderLock&&) {
   const auto& metrics = UITheme::getInstance().getMetrics();
   const int pageWidth = renderer.getScreenWidth();
   const int sidePadding = metrics.contentSidePadding;
-  const int cardWidth = (pageWidth - sidePadding * 2 - SUMMARY_GAP) / 2;
   const int summaryTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
-  const int detailsTop = summaryTop + SUMMARY_CARD_HEIGHT * 3 + SUMMARY_GAP * 2 + metrics.verticalSpacing;
+  const int ticketHeight = SUMMARY_CARD_HEIGHT * 3 + SUMMARY_GAP * 2;
+  const int detailsTop = summaryTop + ticketHeight + metrics.verticalSpacing;
   const uint64_t todayReadingMs = READING_STATS.getTodayReadingMs();
   const std::string dailyGoalValue = ReadingStatsAnalytics::formatDurationHm(todayReadingMs) + " / " +
                                      ReadingStatsAnalytics::formatDurationHm(getDailyReadingGoalMs());
@@ -518,24 +571,51 @@ void ReadingStatsActivity::render(RenderLock&&) {
     HeaderDateUtils::drawHeaderWithDate(renderer, tr(STR_READING_STATS));
   }
 
-  drawMetricCard(renderer, Rect{sidePadding, summaryTop, cardWidth, SUMMARY_CARD_HEIGHT}, tr(STR_STREAK),
-                 std::to_string(READING_STATS.getCurrentStreakDays()));
-  drawMetricCard(renderer, Rect{sidePadding + cardWidth + SUMMARY_GAP, summaryTop, cardWidth, SUMMARY_CARD_HEIGHT},
-                 tr(STR_MAX_STREAK), std::to_string(READING_STATS.getMaxStreakDays()));
-  drawMetricCard(renderer,
-                 Rect{sidePadding, summaryTop + SUMMARY_CARD_HEIGHT + SUMMARY_GAP, cardWidth, SUMMARY_CARD_HEIGHT},
-                 tr(STR_DAILY_GOAL), dailyGoalValue, todayReadingMs >= getDailyReadingGoalMs());
-  drawMetricCard(renderer,
-                 Rect{sidePadding + cardWidth + SUMMARY_GAP, summaryTop + SUMMARY_CARD_HEIGHT + SUMMARY_GAP, cardWidth,
-                      SUMMARY_CARD_HEIGHT},
-                 tr(STR_READING_TIME), ReadingStatsAnalytics::formatDurationHm(READING_STATS.getTotalReadingMs()));
-  drawMetricCard(
-      renderer, Rect{sidePadding, summaryTop + (SUMMARY_CARD_HEIGHT + SUMMARY_GAP) * 2, cardWidth, SUMMARY_CARD_HEIGHT},
-      tr(STR_BOOKS_FINISHED), std::to_string(READING_STATS.getBooksFinishedCount()));
-  drawMetricCard(renderer,
-                 Rect{sidePadding + cardWidth + SUMMARY_GAP, summaryTop + (SUMMARY_CARD_HEIGHT + SUMMARY_GAP) * 2,
-                      cardWidth, SUMMARY_CARD_HEIGHT},
-                 tr(STR_BOOKS_STARTED), std::to_string(READING_STATS.getBooksStartedCount()));
+  const std::string streakValue = std::to_string(READING_STATS.getCurrentStreakDays());
+  const std::string maxStreakValue = std::to_string(READING_STATS.getMaxStreakDays());
+  const std::string totalReadingValue = ReadingStatsAnalytics::formatDurationHm(READING_STATS.getTotalReadingMs());
+  const std::string finishedValue = std::to_string(READING_STATS.getBooksFinishedCount());
+  const std::string startedValue = std::to_string(READING_STATS.getBooksStartedCount());
+  const char* ticketValues[] = {streakValue.c_str(), maxStreakValue.c_str(), dailyGoalValue.c_str(),
+                                totalReadingValue.c_str(), finishedValue.c_str(), startedValue.c_str()};
+  const char* ticketLabels[] = {tr(STR_STREAK), tr(STR_MAX_STREAK), tr(STR_DAILY_GOAL), tr(STR_READING_TIME),
+                                tr(STR_BOOKS_FINISHED), tr(STR_BOOKS_STARTED)};
+
+  const Rect ticket{sidePadding, summaryTop, pageWidth - sidePadding * 2, ticketHeight};
+  drawTicketFrame(renderer, ticket);
+  const int ticketHeaderHeight = renderer.getLineHeight(UI_12_FONT_ID) + 10;
+  const std::string dateText = HeaderDateUtils::getDisplayDateText();
+  drawClippedText(renderer, UI_12_FONT_ID, Rect{ticket.x + 14, ticket.y + 8, ticket.width / 2, ticketHeaderHeight},
+                  tr(STR_READING_STATS), EpdFontFamily::BOLD);
+  drawClippedText(renderer, SMALL_FONT_ID,
+                  Rect{ticket.x + ticket.width / 2, ticket.y + 10, ticket.width / 2 - 14, ticketHeaderHeight},
+                  dateText.c_str(), EpdFontFamily::REGULAR);
+  drawDottedLine(renderer, ticket.x + 10, ticket.y + ticketHeaderHeight, ticket.x + ticket.width - 10,
+                 ticket.y + ticketHeaderHeight);
+
+  constexpr int ticketStubWidth = 112;
+  const int stubWidth = std::min(ticketStubWidth, std::max(72, ticket.width / 3));
+  const Rect metricGrid{ticket.x + 12, ticket.y + ticketHeaderHeight + 8,
+                        std::max(1, ticket.width - stubWidth - 24), std::max(1, ticket.height - ticketHeaderHeight - 18)};
+  const int stubX = metricGrid.x + metricGrid.width + 8;
+  drawTicketDivider(renderer, stubX, ticket.y + ticketHeaderHeight + 8, ticket.height - ticketHeaderHeight - 18);
+  drawTicketMetricGrid(renderer, metricGrid, ticketValues, ticketLabels, 6);
+
+  const int finished = static_cast<int>(READING_STATS.getBooksFinishedCount());
+  const int started = static_cast<int>(READING_STATS.getBooksStartedCount());
+  const int completionPercent = started == 0 ? 0 : std::min(100, finished * 100 / started);
+  char completionText[8];
+  snprintf(completionText, sizeof(completionText), "%d%%", completionPercent);
+  const int stubCenter = stubX + (ticket.x + ticket.width - stubX) / 2;
+  const int completionWidth = renderer.getTextWidth(UI_12_FONT_ID, completionText, EpdFontFamily::BOLD);
+  renderer.drawText(UI_12_FONT_ID, stubCenter - completionWidth / 2, ticket.y + ticketHeaderHeight + 18,
+                    completionText, true, EpdFontFamily::BOLD);
+  drawCenteredClippedText(renderer, SMALL_FONT_ID,
+                          Rect{stubX + 5, ticket.y + ticketHeaderHeight + 40, ticket.x + ticket.width - stubX - 10,
+                               renderer.getLineHeight(SMALL_FONT_ID)},
+                          tr(STR_BOOKS_FINISHED));
+  drawTicketBarcode(renderer, Rect{stubX + 16, ticket.y + ticket.height - 30,
+                                   std::max(1, ticket.x + ticket.width - stubX - 32), 18});
 
   drawMoreDetailsButton(renderer, Rect{sidePadding, detailsTop, pageWidth - sidePadding * 2, DETAILS_BUTTON_HEIGHT},
                         selectedIndex == 0);
@@ -581,9 +661,12 @@ void ReadingStatsActivity::renderInx() {
   drawPageHeader(Rect{0, metrics.topPadding, screenWidth, metrics.headerHeight}, tr(STR_READING_STATS));
 
   const Rect mainContent = pageContentRect();
+  const Rect ticket{mainContent.x + 8, mainContent.y + 2, std::max(1, mainContent.width - 16),
+                    std::max(1, mainContent.height - 4)};
   const Rect content{mainContent.x + 18, mainContent.y + 6, mainContent.width - 36,
                      std::max(1, mainContent.height - 12)};
   const auto& books = READING_STATS.getBooks();
+  drawTicketFrame(renderer, ticket);
   const int pageTitleHeight = renderer.getLineHeight(UI_12_FONT_ID);
   const int bookTitleHeight = renderer.getLineHeight(UI_12_FONT_ID);
   const int bodyHeight = renderer.getLineHeight(UI_10_FONT_ID);

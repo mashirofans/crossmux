@@ -250,6 +250,7 @@ class EpubReaderActivity final : public ReaderActivity {
 #endif
   unsigned long confirmLongPressThreshold() const;
   void toggleAutoPageTurn(uint8_t requestedPageTurnRate);
+  void setFullscreenReading(bool enabled);
   void loadCachedBookmarks();
   void addBookmark();
   void updateBookmarkFlag();

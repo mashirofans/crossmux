@@ -30,6 +30,9 @@ class ReaderToolbarUi : public UiAppHost {
     bool panel = false;  // false = toolbar, true = a Contents/Text/More panel
     // Toolbar
     const char* chapterTitle = nullptr;
+    // Read Pico uses its status-bar reader font for this title so a chapter
+    // name does not switch between the SD face and the built-in UI face.
+    bool chapterTitleUsesStatusFont = false;
     const char* pageInfo = nullptr;  // "12/40   51%"
     int progressPermille = 0;        // 0..1000 book progress (scrub handle)
     // Panel

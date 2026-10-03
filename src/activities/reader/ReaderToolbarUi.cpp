@@ -39,6 +39,7 @@ constexpr int16_t kScrubGap = 12;                                     // air bet
 constexpr int16_t kToolRowH = UiHighDpiProfile::enabled ? 112 : 80;
 constexpr int16_t kToolPillInset = 10;
 constexpr int kToolCount = 3;
+constexpr StrId kToolLabels[kToolCount] = {StrId::STR_TOOL_CONTENTS, StrId::STR_TOOL_TEXT, StrId::STR_TOOL_MORE};
 // Bottom sheet height for the panels. ListNav fits whole rows in the remaining
 // list area; any spare pixels stay between the list and the switcher.
 constexpr int kPanelHeightPercent = 62;
@@ -103,10 +104,9 @@ void ReaderToolbarUi::screenFn(UiScreen& screen, void* user) {
   }
 }
 
-// The Contents / Text / More row: three equal slots, an icon centred in each,
-// the active one inside an outline pill (the theme's control radius). Each
-// slot is registered as one tap target, so the row stays light (no filled
-// tiles, no labels -- the glyphs carry the meaning).
+// The Contents / Text / More row: three equal slots, an icon and a translated
+// label in each, the active one inside an outline pill. Each slot is the tap
+// target, so the visual label and hit region stay aligned.
 void ReaderToolbarUi::buildToolRow(UiScreen& screen, const fui::LayoutAnchor anchor, const int16_t sideInset) {
   const auto& tokens = screen.theme();
   constexpr int iconSize = UiHighDpiProfile::enabled ? UiHighDpiProfile::controlIconSize : 24;
@@ -128,16 +128,27 @@ void ReaderToolbarUi::buildToolRow(UiScreen& screen, const fui::LayoutAnchor anc
   // Theme radius as-is (the frontlight panel pattern); the fill clamps to
   // the shape's own height so round themes cannot overshoot.
   const uint8_t pillRadius = tokens.controlRadius;
+  fui::TextStyle labelStyle = tokens.smallText;
+  labelStyle.align = fui::TextAlign::Center;
+  labelStyle.maxLines = 1;
   for (int i = 0; i < kToolCount; ++i) {
     const fui::Rect slot{static_cast<int16_t>(row.x + slotW * i), row.y, slotW, row.height};
     if (i == model_.activeTool) {
       screen.target().stroke(slot.inset(fui::Insets{4, kToolPillInset, 4, kToolPillInset}),
                              fui::Paint::solid(fui::Color::Black), 2, pillRadius);
     }
+    const int labelHeight = screen.target().lineHeight(labelStyle.font);
+    const int iconLabelGap = std::max(4, tokens.spaceSm / 2);
+    const int contentHeight = iconSize + iconLabelGap + labelHeight;
+    const int contentTop = slot.y + std::max(0, (slot.height - contentHeight) / 2);
     const fui::Rect iconRect{static_cast<int16_t>(slot.x + (slot.width - iconSize) / 2),
-                             static_cast<int16_t>(slot.y + (slot.height - iconSize) / 2),
+                             static_cast<int16_t>(contentTop),
                              static_cast<int16_t>(iconSize), static_cast<int16_t>(iconSize)};
     screen.target().bitmap(iconRect, icons[i], fui::BitmapMode::Center);
+    labelStyle.bold = i == model_.activeTool;
+    screen.target().text(
+        fui::Rect{slot.x, static_cast<int16_t>(contentTop + iconSize + iconLabelGap), slot.width, labelHeight},
+        I18N.get(kToolLabels[i]), labelStyle);
     screen.frame().hit(slot, ACTION_TOOL, static_cast<int16_t>(i), fui::InputTouch);
   }
 }
@@ -221,6 +232,7 @@ void ReaderToolbarUi::buildToolbar(UiScreen& screen) {
     const fui::Rect line = screen.takeTop(metaH, tokens.spaceSm);
     fui::TextStyle titleStyle = tokens.smallText;
     titleStyle.bold = true;
+    if (model_.chapterTitleUsesStatusFont) titleStyle.font = fui::GfxRendererTarget::FONT_LABEL;
     fui::TextStyle infoStyle = tokens.smallText;
     infoStyle.align = fui::TextAlign::Right;
     const int16_t infoW =

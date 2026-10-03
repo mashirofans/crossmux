@@ -18,10 +18,12 @@ namespace fui = freeink::ui;
 EpubReaderMenuActivity::EpubReaderMenuActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                                                const std::string& title, const int currentPage, const int totalPages,
                                                const int bookProgressPercent, const uint8_t currentOrientation,
-                                               const bool hasFootnotes, const bool hasBookmarks)
+                                               const bool hasFootnotes, const bool hasBookmarks,
+                                               const bool fullscreenReading)
     : UiListActivity("EpubReaderMenu", renderer, mappedInput, false, true),
       title(title),
       pendingOrientation(currentOrientation),
+      pendingFullscreenReading(fullscreenReading),
       currentPage(currentPage),
       totalPages(totalPages),
       bookProgressPercent(bookProgressPercent) {
@@ -53,6 +55,7 @@ void EpubReaderMenuActivity::buildMenuItems(std::vector<MenuItem>& items, bool h
   }
   items.push_back({MenuAction::TOGGLE_BOOKMARK, StrId::STR_TOGGLE_BOOKMARK});
   items.push_back({MenuAction::NIGHT_MODE, StrId::STR_NIGHT_MODE});
+  items.push_back({MenuAction::TOGGLE_FULLSCREEN, StrId::STR_FULLSCREEN_READING});
   if (Frontlight.present()) {
     items.push_back({MenuAction::FRONTLIGHT, StrId::STR_FRONTLIGHT});
   }
@@ -73,8 +76,10 @@ void EpubReaderMenuActivity::closeCancelled() {
   result.isCancelled = true;
   result.data =
       MenuResult{-1, pendingOrientation,
-                 static_cast<uint8_t>(
-                     selectedPageTurnOption == 0 ? 0 : std::array<uint8_t, 5>{0, 1, 3, 6, 12}[selectedPageTurnOption])};
+                 static_cast<uint8_t>(selectedPageTurnOption == 0
+                                          ? 0
+                                          : std::array<uint8_t, 5>{0, 1, 3, 6, 12}[selectedPageTurnOption]),
+                 pendingFullscreenReading};
   setResult(std::move(result));
   finish();
 }
@@ -124,6 +129,12 @@ void EpubReaderMenuActivity::activateIndex(const int index) {
     return;
   }
 
+  if (selectedAction == MenuAction::TOGGLE_FULLSCREEN) {
+    pendingFullscreenReading = !pendingFullscreenReading;
+    requestUpdate();
+    return;
+  }
+
   if (selectedAction == MenuAction::FRONTLIGHT) {
     const bool lightOn = !Frontlight.isOn();
     Frontlight.setOn(lightOn);
@@ -136,7 +147,8 @@ void EpubReaderMenuActivity::activateIndex(const int index) {
   setResult(MenuResult{static_cast<int>(selectedAction), pendingOrientation,
                        static_cast<uint8_t>(selectedPageTurnOption == 0
                                                 ? 0
-                                                : std::array<uint8_t, 5>{0, 1, 3, 6, 12}[selectedPageTurnOption])});
+                                                : std::array<uint8_t, 5>{0, 1, 3, 6, 12}[selectedPageTurnOption]),
+                       pendingFullscreenReading});
   finish();
 }
 
@@ -189,6 +201,8 @@ void EpubReaderMenuActivity::buildScreen(UiScreen& screen) {
       menuRowItems[i].value = pageTurnLabels[selectedPageTurnOption];
     } else if (action == MenuAction::NIGHT_MODE) {
       GUI.setCheckboxRow(menuRowItems[i], SETTINGS.screenInverted);
+    } else if (action == MenuAction::TOGGLE_FULLSCREEN) {
+      GUI.setCheckboxRow(menuRowItems[i], pendingFullscreenReading);
     } else if (action == MenuAction::FRONTLIGHT) {
       GUI.setCheckboxRow(menuRowItems[i], Frontlight.isOn());
     }

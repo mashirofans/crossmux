@@ -520,6 +520,7 @@ void EpubReaderActivity::openReaderMenu() {
           applyOrientation(menu.orientation);
         }
         toggleAutoPageTurn(menu.pageTurnRate);
+        setFullscreenReading(menu.fullscreenReading);
 #if FREEINK_DEVICE_EEGO_A4
         // EEGO's single-pass grayscale page must clear the menu first.
         pagesUntilFullRefresh = 1;
@@ -530,7 +531,7 @@ void EpubReaderActivity::openReaderMenu() {
         }
       },
       epub->getTitle(), currentPage, totalPages, bookProgressPercent, SETTINGS.orientation,
-      !currentPageFootnotes.empty(), !cachedBookmarks.empty());
+      !currentPageFootnotes.empty(), !cachedBookmarks.empty(), SETTINGS.fullscreenReading != 0);
 }
 
 ReaderRenderSpec EpubReaderActivity::effectiveRenderSpec(const uint16_t width, const uint16_t height) const {
@@ -1451,7 +1452,8 @@ void EpubReaderActivity::toggleAutoPageTurn(const uint8_t requestedPageTurnRate)
   pageTurnDuration = (1UL * 60 * 1000) / pageTurnRate;
   automaticPageTurnActive = true;
 
-  const uint8_t statusBarHeight = UITheme::getInstance().getStatusBarHeight();
+  const bool fullscreenReading = SETTINGS.fullscreenReading != 0;
+  const uint8_t statusBarHeight = fullscreenReading ? 0 : UITheme::getInstance().getStatusBarHeight();
   if (statusBarHeight == 0 || statusBarHeight == UITheme::getInstance().getProgressBarHeight()) {
     RenderLock lock;
     if (section) {
@@ -1462,6 +1464,22 @@ void EpubReaderActivity::toggleAutoPageTurn(const uint8_t requestedPageTurnRate)
     }
     section.reset();
   }
+}
+
+void EpubReaderActivity::setFullscreenReading(const bool enabled) {
+  const uint8_t value = enabled ? 1 : 0;
+  if (SETTINGS.fullscreenReading == value) return;
+
+  SETTINGS.fullscreenReading = value;
+  SETTINGS.saveToFile();
+  RenderLock lock;
+  if (section) {
+    rememberCurrentContentOffset();
+    cachedSpineIndex = currentSpineIndex;
+    cachedChapterTotalPageCount = section->pageCount;
+    nextPageNumber = section->currentPage;
+  }
+  section.reset();
 }
 
 bool EpubReaderActivity::pageTurn(bool isForwardTurn) {
@@ -1692,14 +1710,16 @@ void EpubReaderActivity::renderBook() {
   orientedMarginLeft += SETTINGS.screenMargin;
   orientedMarginRight += SETTINGS.screenMargin;
 
-  const uint8_t statusBarHeight = UITheme::getInstance().getStatusBarHeight();
+  const bool fullscreenReading = SETTINGS.fullscreenReading != 0;
+  const uint8_t statusBarHeight = fullscreenReading ? 0 : UITheme::getInstance().getStatusBarHeight();
 
   int bottomReserve = statusBarHeight;
   if (automaticPageTurnActive &&
       (statusBarHeight == 0 || statusBarHeight == UITheme::getInstance().getProgressBarHeight())) {
     bottomReserve += UITheme::getInstance().getMetrics().statusBarVerticalMargin;
   }
-  if (UiHighDpiProfile::enabled && (SETTINGS.statusBarSpec().textLaneVisible() || automaticPageTurnActive)) {
+  if (!fullscreenReading && UiHighDpiProfile::enabled &&
+      (SETTINGS.statusBarSpec().textLaneVisible() || automaticPageTurnActive)) {
     // Reuse the footer's unused top space while keeping a gap above its text.
     bottomReserve -=
         std::max(0, UITheme::getStatusBarTextTopPadding(renderer) - UiHighDpiProfile::readerContentStatusGap);
@@ -2878,6 +2898,8 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
 }
 
 void EpubReaderActivity::renderStatusBar() const {
+  if (SETTINGS.fullscreenReading != 0) return;
+
   const int currentPage = section ? section->currentPage + 1 : 1;
   const float pageCount = section ? section->estimatedTotalPages() : 1;
   const float sectionChapterProg = (pageCount > 0) ? (static_cast<float>(currentPage) / pageCount) : 0;
@@ -3195,6 +3217,10 @@ void EpubReaderActivity::renderOverlay() {
     pageInfo = std::to_string(section->currentPage + 1) + "/" + std::to_string(pageCount) + "   " +
                std::to_string(clampPercent(static_cast<int>(bookProgress * 100.0f + 0.5f))) + "%";
     model.chapterTitle = chapterTitle.c_str();
+#if FREEINK_DEVICE_READPICO || defined(SIMULATOR_DEVICE_READPICO)
+    model.chapterTitleUsesStatusFont = true;
+    toolbarUi->uiTarget.setFont(freeink::ui::GfxRendererTarget::FONT_LABEL, READER_STATUS_FONT_ID);
+#endif
     model.pageInfo = pageInfo.c_str();
     model.progressPermille = static_cast<int>(bookProgress * 1000.0f + 0.5f);
     toolbarUi->setModel(model);
@@ -3235,6 +3261,7 @@ void EpubReaderActivity::renderOverlay() {
       const auto action = self->moreItems[i].action;
       if (action == MA::NIGHT_MODE) GUI.setCheckboxRow(item, SETTINGS.screenInverted);
       if (action == MA::FRONTLIGHT) GUI.setCheckboxRow(item, Frontlight.isOn());
+      if (action == MA::TOGGLE_FULLSCREEN) GUI.setCheckboxRow(item, SETTINGS.fullscreenReading != 0);
     };
   }
   toolbarUi->setModel(model);
@@ -3705,6 +3732,8 @@ std::string EpubReaderActivity::moreRowValue(int row) const {
       return SETTINGS.screenInverted ? tr(STR_STATE_ON) : tr(STR_STATE_OFF);
     case MA::FRONTLIGHT:
       return Frontlight.isOn() ? tr(STR_STATE_ON) : tr(STR_STATE_OFF);
+    case MA::TOGGLE_FULLSCREEN:
+      return SETTINGS.fullscreenReading ? tr(STR_STATE_ON) : tr(STR_STATE_OFF);
     case MA::IMAGE_SCALING: {
       // Same labels the reader menu's option popup offers, so the row's value
       // and the popup's highlighted entry always agree.
@@ -3797,6 +3826,14 @@ void EpubReaderActivity::activateMoreRow(int row) {
       }
       return;
     }
+    case MA::TOGGLE_FULLSCREEN:
+      setFullscreenReading(SETTINGS.fullscreenReading == 0);
+      {
+        RenderLock lock;
+        discardOverlayPage();
+      }
+      requestUpdate();
+      return;
     default:
       break;
   }
