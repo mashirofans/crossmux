@@ -3194,9 +3194,12 @@ void EpubReaderActivity::openOverlay(Overlay target) {
   }
 }
 
-// Close the overlay back to the reading page. Boards without the Xteink
-// grayscale-AA pass restore the page snapshot and push one FAST refresh -- no
-// re-render, no flash; Xteink boards re-render to restore the AA planes.
+// Close the overlay back to the reading page. A combined grayscale panel cannot
+// restore the anti-aliased page from the B/W overlay snapshot: the snapshot is
+// intentionally only one bit per pixel, and the overlay refresh has already
+// replaced the panel baseline with that B/W frame. Re-render those pages so the
+// reader writes its selector planes again; simple B/W panels keep the cheap
+// snapshot restore.
 void EpubReaderActivity::closeOverlayToPage() {
   mappedInput.resetHomeButtonInput();
   overlay = Overlay::None;
@@ -3217,6 +3220,15 @@ void EpubReaderActivity::closeOverlayToPage() {
   // handoff.
   renderer.requestNextFullRefresh();
 #endif
+  if (renderer.supportsTextOnlyCombinedBase() && SETTINGS.textAntiAliasing && overlayPageStored) {
+    {
+      RenderLock lock;
+      settleOverlayRefresh();
+      discardOverlayPage();
+    }
+    requestUpdate();
+    return;
+  }
   if (!xteinkClassPanel() && overlayPageStored) {
     RenderLock lock;  // the render task shares the framebuffer
     settleOverlayRefresh();
@@ -3300,18 +3312,13 @@ void EpubReaderActivity::renderOverlay() {
     };
   }
   toolbarUi->setModel(model);
-  bool strictContentsFont = false;
 #if FREEINK_DEVICE_READPICO || defined(SIMULATOR_DEVICE_READPICO)
-  if (overlay == Overlay::Contents && SETTINGS.sdFontFamilyName[0] != '\0') {
-    const auto* family = sdFontSystem.registry().findFamily(SETTINGS.sdFontFamilyName);
-    const uint8_t bodyPointSize = UiHighDpiProfile::enabled ? 14 : 12;
-    const auto* bodyFace = family ? family->findNearestSize(bodyPointSize) : nullptr;
-    strictContentsFont = bodyFace != nullptr && bodyFace->pointSize == bodyPointSize;
-    if (strictContentsFont) renderer.setStrictFont(UiHighDpiProfile::enabled ? UI_10_FONT_ID : UI_12_FONT_ID);
+  std::optional<GfxRenderer::SdTextFontScope> contentsFont;
+  if (overlay == Overlay::Contents) {
+    contentsFont.emplace(renderer, UiHighDpiProfile::enabled ? UI_10_FONT_ID : UI_12_FONT_ID);
   }
 #endif
   toolbarUi->render();
-  if (strictContentsFont) renderer.clearStrictFont();
 }
 
 void EpubReaderActivity::handleOverlayInput() {

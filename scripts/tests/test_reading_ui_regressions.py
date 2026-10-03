@@ -33,13 +33,12 @@ def run_cpp(program, include_dirs=(), defines=()):
 
 
 class ReadingUiRegressionTest(unittest.TestCase):
-    def test_reader_contents_sd_font_is_kept_for_the_whole_list(self):
-        renderer = (ROOT / 'lib/GfxRenderer/GfxRenderer.cpp').read_text()
+    def test_reader_contents_prefers_sd_font_without_disabling_fallback(self):
         reader = (ROOT / 'src/activities/reader/EpubReaderActivity.cpp').read_text()
-
-        self.assertIn('if (strictFontId_ == fontId) return effectiveFontId;', renderer)
-        self.assertIn('renderer.setStrictFont(UiHighDpiProfile::enabled ? UI_10_FONT_ID : UI_12_FONT_ID);', reader)
-        self.assertIn('renderer.clearStrictFont();', reader)
+        overlay = method(reader, 'void EpubReaderActivity::renderOverlay()')
+        self.assertIn('std::optional<GfxRenderer::SdTextFontScope> contentsFont;', overlay)
+        self.assertIn('contentsFont.emplace(renderer, UiHighDpiProfile::enabled ? UI_10_FONT_ID : UI_12_FONT_ID);', overlay)
+        self.assertNotIn('setStrictFont', overlay)
 
     def test_reader_contents_heading_uses_body_font(self):
         toolbar = (ROOT / 'src/activities/reader/ReaderToolbarUi.cpp').read_text()
@@ -84,6 +83,15 @@ class ReadingUiRegressionTest(unittest.TestCase):
                         push.index('renderer.cleanupGrayscaleWithFrameBuffer();'))
         self.assertLess(push.index('renderer.cleanupGrayscaleWithFrameBuffer();'),
                         push.index('renderer.storeBwBuffer();'))
+
+    def test_combined_aa_reader_rebuilds_after_toolbar_close(self):
+        reader = (ROOT / 'src/activities/reader/EpubReaderActivity.cpp').read_text()
+        close = method(reader, 'void EpubReaderActivity::closeOverlayToPage()')
+
+        self.assertIn('renderer.supportsTextOnlyCombinedBase() && SETTINGS.textAntiAliasing && overlayPageStored', close)
+        self.assertIn('discardOverlayPage();', close)
+        self.assertIn('requestUpdate();', close)
+        self.assertLess(close.index('supportsTextOnlyCombinedBase()'), close.index('if (!xteinkClassPanel()'))
 
     def test_ui_aa_keeps_readpico_selector_background_untouched(self):
         helper = (ROOT / 'src/util/UiAntiAliasedRender.h').read_text()

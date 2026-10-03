@@ -22,6 +22,7 @@ class UiFontFallbackTest(unittest.TestCase):
             self.assertIn(ord('海'), coverage)
             self.assertEqual(ord('梦') in coverage, size == 12)
         renderer = (ROOT / 'lib/GfxRenderer/GfxRenderer.cpp').read_text()
+        header = (ROOT / 'lib/GfxRenderer/GfxRenderer.h').read_text()
         run_cpp(r'''
 #include <algorithm>
 #include <array>
@@ -30,33 +31,71 @@ class UiFontFallbackTest(unittest.TestCase):
 #include <set>
 #include <string>
 #define LOG_ERR(...) ((void)0)
-namespace BidiUtils { enum class BidiBaseDir { AUTO }; }
+namespace BidiUtils {
+enum class BidiBaseDir { AUTO };
+bool isTransparentMark(uint32_t) { return false; }
+}
 const void* measured=nullptr;
+const void* drawn=nullptr;
+int missingGlyphs=0;
 const char* resolveVisualText(const char* text,std::string& visual,BidiUtils::BidiBaseDir) {
   if (std::string(text)=="ا") { visual="ﺍ";return visual.c_str(); }
   return text;
 }
 #include "Utf8.h"
 #include "Utf8.cpp"
+#include "MissingGlyph.h"
+constexpr int trackingBetween(uint32_t,uint32_t,int8_t) { return 0; }
 struct EpdFontFamily {
-  enum Style { REGULAR, BOLD };
+  enum Style { REGULAR=0, BOLD=1, SUP=16, SUB=32 };
   std::set<uint32_t> coverage;
-  bool hasCodepoint(uint32_t cp, Style) const { return coverage.contains(cp); }
+  std::set<uint32_t> boldCoverage{};
+  bool hasCodepoint(uint32_t cp, Style style) const {
+    return (style==BOLD && !boldCoverage.empty() ? boldCoverage : coverage).contains(cp);
+  }
   void getTextDimensions(const char*,int* w,int* h,Style) const { measured=this;*w=20;*h=20; }
+  const EpdFontData* getData(Style) const { static EpdFontData data{};data.ascender=12;return &data; }
+  const EpdGlyph* getGlyph(uint32_t cp,Style style) const {
+    static EpdGlyph glyph{8,8,128,0,8,0,0};
+    return hasCodepoint(cp,style)?&glyph:nullptr;
+  }
+  uint32_t applyLigatures(uint32_t cp,const char*&,Style) const { return cp; }
+  int getKerning(uint32_t,uint32_t,Style) const { return 0; }
+};
+enum class TextRotation { None };
+template<TextRotation> void renderCharImpl(const auto&,int,const EpdFontFamily& font,uint32_t cp,
+                                         int,int,bool,EpdFontFamily::Style style,uint8_t) {
+  drawn=&font;
+  if (!font.hasCodepoint(cp,style)) ++missingGlyphs;
+}
+void renderCharScaled(const auto&,int,const EpdFontFamily&,uint32_t,int,int,bool,EpdFontFamily::Style,uint8_t) {}
+struct FontCacheManager {
+  bool isScanning() const { return false; }
+  void recordText(const char*,int,EpdFontFamily::Style) {}
 };
 struct GfxRenderer {
   std::map<int,EpdFontFamily> fontMap;
   std::map<int,std::array<int,2>> fallbackFontMap_;
   std::map<int,int> preferredFontMap_;
+  std::map<int,void*> sdCardFonts_,ttfFonts_;
+  mutable int sdPreferredTextFontId_=0;
+  int syntheticBoldPixels=0,renderMode=0;
+  FontCacheManager* fontCacheManager_=nullptr;
+  int getFontAscenderSize(int) const { return 12; }
+  int getLineHeight(int) const { return 20; }
   void ensureSdGlyphsResident(int,const char*,EpdFontFamily::Style,bool) const {}
   int getTextWidth(int,const char*,EpdFontFamily::Style=EpdFontFamily::REGULAR,
                    BidiUtils::BidiBaseDir=BidiUtils::BidiBaseDir::AUTO) const;
   int resolveFontFamilyId(int) const;
   int resolveTextFontId(int,const char*,EpdFontFamily::Style=EpdFontFamily::REGULAR) const;
+  void drawText(int,int,int,const char*,bool=true,EpdFontFamily::Style=EpdFontFamily::REGULAR,
+                BidiUtils::BidiBaseDir=BidiUtils::BidiBaseDir::AUTO,int8_t=0) const;
+''' + method(header, 'class SdTextFontScope {') + r''';
 };
 ''' + method(renderer, 'int GfxRenderer::resolveFontFamilyId(')
             + method(renderer, 'int GfxRenderer::resolveTextFontId(')
-            + method(renderer, 'int GfxRenderer::getTextWidth(') + r'''
+            + method(renderer, 'int GfxRenderer::getTextWidth(')
+            + method(renderer, 'void GfxRenderer::drawText(') + r'''
 int main() {
   GfxRenderer r;
   r.fontMap[14]={{'A'}}; // NotoSans
@@ -92,8 +131,62 @@ int main() {
   assert(r.resolveTextFontId(14,"龘")==314);
   r.preferredFontMap_.clear(); // unloading SD preserves fixed fallbacks
   assert(r.resolveTextFontId(14,"梦海")==12);
+
+  // Reproduce the high-DPI directory binding: Latin primary, CJK subset
+  // first fallback, then the loaded reading family. The old strict bypass
+  // returned the Latin primary here and drew boxes for every Chinese glyph.
+  const char* rows[]={"目录","第168章 海","第169章 梦海","Chapter 170"};
+  const auto addText=[](EpdFontFamily& font,const char* text) {
+    uint32_t cp;
+    while ((cp=utf8NextCodepoint(reinterpret_cast<const uint8_t**>(&text)))) font.coverage.insert(cp);
+  };
+  for (const char* row : rows) addText(r.fontMap[12],row);
+  r.fontMap[414]=r.fontMap[12];
+  r.fallbackFontMap_[14]={114,414};
+  int loadedFont;
+  const auto checkDraw=[&](const char* text,int font,EpdFontFamily::Style style=EpdFontFamily::REGULAR) {
+    missingGlyphs=0;drawn=nullptr;measured=nullptr;
+    r.getTextWidth(14,text,style);
+    r.drawText(14,0,0,text,true,style);
+    assert(measured==&r.fontMap.at(font) && drawn==measured && missingGlyphs==0);
+  };
+  for (bool vector : {false,true}) {
+    auto& loaded=vector?r.ttfFonts_:r.sdCardFonts_;
+    loaded[414]=&loadedFont;
+    {
+      GfxRenderer::SdTextFontScope scope(r,14);
+      for (auto style : {EpdFontFamily::REGULAR,EpdFontFamily::BOLD})
+        for (const char* row : rows) checkDraw(row,414,style);
+      // An unrelated UI size, empty strings and nested/early-return scopes
+      // keep their own selection and restore the surrounding preference.
+      r.fallbackFontMap_[16]={114,414};r.fontMap[16]=r.fontMap[14];
+      assert(r.resolveTextFontId(16,"海")==114);
+      assert(r.resolveTextFontId(14,nullptr)==14 && r.resolveTextFontId(14,"")==14);
+      [&] { GfxRenderer::SdTextFontScope nested(r,16);return; }();
+      checkDraw("目录",414);
+      // Incomplete SD regular/bold faces still use a covering fallback.
+      r.fontMap[414].coverage.erase(0x68a6);
+      checkDraw("梦海",12);
+      r.fontMap[414].boldCoverage={'A'};
+      checkDraw("目录",12,EpdFontFamily::BOLD);
+      r.fontMap[414]=r.fontMap[12];
+      // A missing UI size or failed load is not a usable SD font.
+      loaded.erase(414);
+      checkDraw("海",114);
+      r.fontMap.erase(414);
+      checkDraw("目录",12);
+      // A stale loader entry cannot select an unregistered family.
+      loaded[414]=&loadedFont;
+      checkDraw("目录",12);
+      loaded.erase(414);
+      r.fontMap[414]=r.fontMap[12];
+    }
+    assert(r.sdPreferredTextFontId_==0);
+    checkDraw("海",114); // other screens keep normal interface typography
+  }
 }
-''', include_dirs=(ROOT / 'lib/Utf8',), defines=('CROSSMUX_UI_PROFILE_HIGH_DPI',))
+''', include_dirs=(ROOT / 'lib/Utf8', ROOT / 'lib/EpdFont', ROOT / 'lib/MiniBidi'),
+                defines=('CROSSMUX_UI_PROFILE_HIGH_DPI',))
 
     def test_high_dpi_reader_family_does_not_replace_ui(self):
         system = (ROOT / 'src/SdCardFontSystem.cpp').read_text()
@@ -376,6 +469,8 @@ struct GfxRenderer {
   using TextGetter = const char* (*)(const void*, uint32_t);
   void prewarmFallbackText(int,TextGetter,const void*,uint32_t,EpdFontFamily::Style=EpdFontFamily::REGULAR) const;
   std::map<int, SdCardFont*> sdCardFonts_;
+  std::map<int, void*> ttfFonts_;
+  mutable int sdPreferredTextFontId_=0;
   std::map<int, int> sdCardFontScales_;
   const auto& getFontMap() const { return fontMap; }
   int resolveTextFontId(int, const char*, EpdFontFamily::Style = EpdFontFamily::REGULAR) const;

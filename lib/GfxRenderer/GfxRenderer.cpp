@@ -311,13 +311,31 @@ int GfxRenderer::resolveTextFontId(const int fontId, const char* text, const Epd
   // on one face -- both call this function.
   const int effectiveFontId = resolveFontFamilyId(fontId);
 
-  if (strictFontId_ == fontId) return effectiveFontId;
-
   // Fallbacks stay keyed by the requested id; for a rebound id the entry names the
   // built-in family, which is exactly what the SD face should fall back to.
   const auto fbIt = fallbackFontMap_.find(fontId);
   if (fbIt == fallbackFontMap_.end() || text == nullptr || *text == '\0') {
     return effectiveFontId;
+  }
+  if (sdPreferredTextFontId_ == fontId) {
+    // High-DPI UI fonts keep the SD face as a fallback, not as their primary
+    // binding. Prefer that actual loaded face for chapter names, including
+    // ASCII-only runs, but never suppress the normal coverage checks below.
+    const int candidates[] = {effectiveFontId, fbIt->second[0], fbIt->second[1]};
+    for (const int id : candidates) {
+      const auto sd = sdCardFonts_.find(id);
+      const auto ttf = ttfFonts_.find(id);
+      if ((sd == sdCardFonts_.end() || sd->second == nullptr) &&
+          (ttf == ttfFonts_.end() || ttf->second == nullptr)) continue;
+      const auto candidate = fontMap.find(id);
+      if (candidate == fontMap.end()) continue;
+      const char* cursor = text;
+      uint32_t cp;
+      while ((cp = utf8NextCodepoint(reinterpret_cast<const uint8_t**>(&cursor)))) {
+        if (!candidate->second.hasCodepoint(cp, style)) break;
+      }
+      if (cp == 0) return id;
+    }
   }
   const auto fontIt = fontMap.find(effectiveFontId);
   if (fontIt == fontMap.end()) return effectiveFontId;
