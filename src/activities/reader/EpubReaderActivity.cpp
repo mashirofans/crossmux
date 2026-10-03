@@ -2,6 +2,7 @@
 
 #include <Epub/Page.h>
 #include <Epub/blocks/TextBlock.h>
+#include <Epub/converters/DitherUtils.h>
 #include <Epub/css/CssParser.h>
 #include <FontCacheManager.h>
 #include <FsHelpers.h>
@@ -73,6 +74,13 @@
 #include "util/TimeUtils.h"
 
 namespace {
+static_assert(static_cast<uint8_t>(ImageDitherMode::None) == CrossPointSettings::IMAGE_GRAYSCALE_OFF &&
+              static_cast<uint8_t>(ImageDitherMode::Bayer8x8) == CrossPointSettings::IMAGE_GRAYSCALE_BAYER_8X8 &&
+              static_cast<uint8_t>(ImageDitherMode::Bayer4x4) == CrossPointSettings::IMAGE_GRAYSCALE_BAYER_4X4 &&
+              static_cast<uint8_t>(ImageDitherMode::ErrorDiffusion) ==
+                  CrossPointSettings::IMAGE_GRAYSCALE_ERROR_DIFFUSION &&
+              static_cast<uint8_t>(ImageDitherMode::Random) == CrossPointSettings::IMAGE_GRAYSCALE_RANDOM,
+              "Image dither setting values must match converter modes");
 constexpr uint8_t MAX_PAGE_TURN_RATE = 30;
 // The X4 Pro and X4 Classic carry the X4's panel but sit outside isXteinkDevice()
 // (that helper also gates power management). Overlay refresh choices are per-panel:
@@ -1639,7 +1647,7 @@ void EpubReaderActivity::renderBook() {
   // when the filter has not changed, so this costs a compare per render.
   ImageBlock::setBilinearScaling(SETTINGS.imageScaling == CrossPointSettings::IMAGE_SCALING_BILINEAR);
   ImageBlock::setGrayscaleSimulation(
-      SETTINGS.imageGrayscaleSimulation == CrossPointSettings::IMAGE_GRAYSCALE_256);
+      static_cast<ImageDitherMode>(SETTINGS.imageGrayscaleSimulation));
 
   const auto showPendingSyncSaveError = [this]() {
     if (pendingSyncSaveError) {

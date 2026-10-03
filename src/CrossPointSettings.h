@@ -296,13 +296,20 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // cheaper path.
   enum IMAGE_SCALING { IMAGE_SCALING_NEAREST = 0, IMAGE_SCALING_BILINEAR = 1, IMAGE_SCALING_COUNT };
 
-  // Use a finer ordered dither when reducing 8-bit image samples to the
-  // panel's four reader gray levels. This keeps the historical Bayer path as
-  // the default and is intentionally reader-scoped.
+  // Select the software dither used when reducing 8-bit image samples to the
+  // panel's four reader gray levels. Value 1 was the old boolean
+  // "256-level simulation" setting and therefore remains the 8x8 Bayer path
+  // for backwards-compatible JSON/config migration.
   enum IMAGE_GRAYSCALE_SIMULATION {
     IMAGE_GRAYSCALE_OFF = 0,
-    IMAGE_GRAYSCALE_256 = 1,
-    IMAGE_GRAYSCALE_SIMULATION_COUNT
+    IMAGE_GRAYSCALE_BAYER_8X8 = 1,
+    IMAGE_GRAYSCALE_BAYER_4X4 = 2,
+    IMAGE_GRAYSCALE_ERROR_DIFFUSION = 3,
+    IMAGE_GRAYSCALE_RANDOM = 4,
+    // Source compatibility for code written against the original boolean
+    // option. Keep this alias equal to the historical value (8x8 Bayer).
+    IMAGE_GRAYSCALE_256 = IMAGE_GRAYSCALE_BAYER_8X8,
+    IMAGE_GRAYSCALE_SIMULATION_COUNT = 5
   };
 
   enum QUICK_RESUME_SLEEP_SCREEN {
@@ -462,8 +469,8 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // Image resampling inside the reader (see IMAGE_SCALING). Applies to inline
   // book images only; reader chrome and other activities are untouched.
   uint8_t imageScaling = IMAGE_SCALING_NEAREST;
-  // Simulate 256 input gray levels through a higher-resolution 4-level dither.
-  // Default is off to preserve the existing image rendering and cache files.
+  // Image grayscale reduction algorithm. Default is off to preserve the
+  // existing image rendering and cache files.
   uint8_t imageGrayscaleSimulation = IMAGE_GRAYSCALE_OFF;
   // Apply the reader's two-plane text AA pipeline to list/menu UI frames.
   // Disabled by default because it roughly triples menu drawing work.

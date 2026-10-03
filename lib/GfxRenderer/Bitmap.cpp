@@ -257,8 +257,8 @@ BmpReaderError Bitmap::parseHeaders() {
   //  - High-color + dithering enabled → error-diffusion dithering (Atkinson or Floyd-Steinberg)
   //  - High-color + dithering disabled → simple quantization (no error diffusion)
   const bool highColor = !nativePalette;
-  if (highColor && dithering) {
-    if (USE_ATKINSON) {
+  if (highColor && ditherMode == ImageDitherMode::ErrorDiffusion) {
+    if (legacyDithering && USE_ATKINSON) {
       atkinsonDitherer = new (std::nothrow) AtkinsonDitherer(width, originalThresholds);
       if (!atkinsonDitherer || !atkinsonDitherer->isValid()) {
         delete atkinsonDitherer;
@@ -310,8 +310,11 @@ BmpReaderError Bitmap::readNextRow(uint8_t* data, uint8_t* rowBuffer, uint8_t* o
         // Palette matches native gray levels: direct mapping (still apply brightness/contrast/gamma)
         color = static_cast<uint8_t>(adjustPixel(lum) >> 6);
       } else {
-        // Non-native palette with dithering disabled: simple quantization
-        color = quantize(adjustPixel(lum), currentX, prevRowY);
+        // Non-native palette with no error buffer: use the selected stateless
+        // threshold, or simple quantization when simulation is disabled.
+        color = ditherMode == ImageDitherMode::None
+                    ? quantize(adjustPixel(lum), currentX, prevRowY)
+                    : applyDither4Level(adjustPixel(lum), currentX, prevRowY, ditherMode);
       }
     }
     if (opacityRow) opacityRow[currentX] = opaque;

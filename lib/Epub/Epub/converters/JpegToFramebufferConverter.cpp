@@ -48,6 +48,7 @@ struct JpegContext {
 
   PixelCache cache;
   bool caching{false};
+  std::unique_ptr<ErrorDiffusionDither4Level> errorDither;
 
   uint32_t lastYieldMs{0};  // throttle state for yieldDuringDecode()
 };
@@ -152,7 +153,10 @@ int jpegDrawCallback(JPEGDRAW* pDraw) {
   if (stride <= 0 || blockH <= 0 || validW <= 0) return 1;
 
   const bool useDithering = ctx->config->useDithering;
-  const bool highQualityDithering = ctx->config->highQualityDithering;
+  const ImageDitherMode ditherMode =
+      ctx->config->highQualityDithering && ctx->config->ditherMode == ImageDitherMode::Bayer4x4
+          ? ImageDitherMode::Bayer8x8
+          : ctx->config->ditherMode;
   const bool writeFramebuffer = ctx->config->output == DecodeOutput::FrameBufferAndCache;
   bool caching = ctx->caching;
   const int32_t fineScaleFPX = ctx->fineScaleFPX;
@@ -213,10 +217,12 @@ int jpegDrawCallback(JPEGDRAW* pDraw) {
       renderer.drawGrayscale16Pixel(outX, outY, gray);
       return;
     }
-    const uint8_t level = useDithering
-                              ? (highQualityDithering ? applyHighQualityDither4Level(gray, outX, outY)
-                                                      : applyBayerDither4Level(gray, outX, outY))
-                              : gray / 85;
+    uint8_t level = static_cast<uint8_t>(gray / 85);
+    if (useDithering) {
+      level = ditherMode == ImageDitherMode::ErrorDiffusion && ctx->errorDither
+                  ? ctx->errorDither->process(outX - cfgX, outY - cfgY, gray)
+                  : applyDither4Level(gray, outX, outY, ditherMode);
+    }
     if (writeFramebuffer) pw.writePixel(outX, level);
     if (caching) cw.writePixel(outX, level);
   };
@@ -467,6 +473,15 @@ bool JpegToFramebufferConverter::decodeToFramebuffer(const std::string& imagePat
   ctx.scaledSrcHeight = (srcHeight + jpegScaleDenom - 1) / jpegScaleDenom;
   ctx.dstWidth = destWidth;
   ctx.dstHeight = destHeight;
+  if (config.output != DecodeOutput::NativeGrayscale16 && config.useDithering &&
+      (config.ditherMode == ImageDitherMode::ErrorDiffusion ||
+       (config.highQualityDithering && config.ditherMode == ImageDitherMode::Bayer4x4))) {
+    ctx.errorDither = makeUniqueNoThrow<ErrorDiffusionDither4Level>(destWidth);
+    if (!ctx.errorDither || !ctx.errorDither->valid()) {
+      LOG_ERR("JPG", "Failed to allocate image dither state (%d pixels)", destWidth);
+      return false;
+    }
+  }
   ctx.fineScaleFPX = (int32_t)((int64_t)destWidth * FP_ONE / ctx.scaledSrcWidth);
   ctx.invScaleFPX = (int32_t)((int64_t)ctx.scaledSrcWidth * FP_ONE / destWidth);
   ctx.fineScaleFPY = (int32_t)((int64_t)destHeight * FP_ONE / ctx.scaledSrcHeight);

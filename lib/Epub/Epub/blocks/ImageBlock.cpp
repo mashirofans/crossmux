@@ -28,7 +28,7 @@ ImageBlock::ExtractFn ImageBlock::extractFn = nullptr;
 // application's settings, so the reader pushes this in (same pattern as
 // setExtractor()) and the decode path reads it here.
 bool ImageBlock::bilinearScaling = false;
-bool ImageBlock::grayscaleSimulation = false;
+ImageDitherMode ImageBlock::grayscaleSimulation = ImageDitherMode::None;
 
 void ImageBlock::setExtractor(void* ctx, ExtractFn fn) {
   extractCtx = ctx;
@@ -41,14 +41,17 @@ void ImageBlock::setBilinearScaling(const bool enabled) {
   // Logged on every transition: the filter also changes the pixel-cache name, so
   // this line is what proves the reader actually re-decoded with the new setting
   // rather than serving the other variant's cache.
-  LOG_INF("IMG", "Image resampling filter -> %s (cache suffix %s)", enabled ? "bilinear" : "nearest",
-          enabled ? ".b.pxc" : ".pxc");
+  LOG_INF("IMG", "Image resampling filter -> %s", enabled ? "bilinear" : "nearest");
 }
 
-void ImageBlock::setGrayscaleSimulation(const bool enabled) {
-  if (grayscaleSimulation == enabled) return;
-  grayscaleSimulation = enabled;
-  LOG_INF("IMG", "Image grayscale simulation -> %s", enabled ? "on" : "off");
+void ImageBlock::setGrayscaleSimulation(const ImageDitherMode mode) {
+  const bool valid = mode == ImageDitherMode::None || mode == ImageDitherMode::Bayer8x8 ||
+                     mode == ImageDitherMode::Bayer4x4 || mode == ImageDitherMode::ErrorDiffusion ||
+                     mode == ImageDitherMode::Random;
+  const ImageDitherMode normalized = valid ? mode : ImageDitherMode::None;
+  if (grayscaleSimulation == normalized) return;
+  grayscaleSimulation = normalized;
+  LOG_INF("IMG", "Image grayscale dither mode -> %u", static_cast<unsigned>(normalized));
 }
 
 bool ImageBlock::imageExists() const { return Storage.exists(imagePath.c_str()); }
@@ -57,12 +60,30 @@ namespace {
 
 std::string getCachePath(const std::string& imagePath) {
   // Replace extension with a mode-specific .pxc (pixel cache). The resampling
-  // filter and grayscale simulation are part of the cache identity: cached
+  // filter and grayscale algorithm are part of the cache identity: cached
   // pixels must not be reused after either setting changes.
   const bool bilinear = ImageBlock::bilinearScalingEnabled();
-  const bool highQuality = ImageBlock::grayscaleSimulationEnabled();
-  const char* suffix = bilinear ? (highQuality ? ".b.hq.pxc" : ".b.pxc")
-                                : (highQuality ? ".hq.pxc" : ".pxc");
+  const char* ditherSuffix = ".pxc";
+  switch (ImageBlock::grayscaleSimulationMode()) {
+    case ImageDitherMode::Bayer8x8:
+      ditherSuffix = ".hq.pxc";  // Keep the historical cache name for raw value 1.
+      break;
+    case ImageDitherMode::Bayer4x4:
+      ditherSuffix = ".b4.pxc";
+      break;
+    case ImageDitherMode::ErrorDiffusion:
+      ditherSuffix = ".fs.pxc";
+      break;
+    case ImageDitherMode::Random:
+      ditherSuffix = ".rnd.pxc";
+      break;
+    case ImageDitherMode::None:
+    default:
+      break;
+  }
+  const std::string suffix = bilinear && ImageBlock::grayscaleSimulationEnabled()
+                                 ? ".b" + std::string(ditherSuffix)
+                                 : (bilinear ? ".b.pxc" : ditherSuffix);
   const size_t dotPos = imagePath.rfind('.');
   if (dotPos != std::string::npos) {
     return imagePath.substr(0, dotPos) + suffix;
@@ -475,7 +496,7 @@ bool ImageBlock::renderInternal(GfxRenderer& renderer, const int x, const int y,
   config.cachePath = cachePath;      // Enable caching during decode
   config.output = output;
   config.bilinearScaling = bilinearScalingEnabled();
-  config.highQualityDithering = grayscaleSimulationEnabled();
+  config.ditherMode = grayscaleSimulationMode();
 
   ImageToFramebufferDecoder* decoder = ImageDecoderFactory::getDecoder(imagePath);
   if (!decoder) {

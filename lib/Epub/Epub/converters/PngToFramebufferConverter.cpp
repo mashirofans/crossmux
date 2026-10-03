@@ -42,6 +42,7 @@ struct PngContext {
   int lastDstY{-1};  // Track last rendered destination Y to avoid duplicates
   PixelCache cache;
   bool caching{false};
+  std::unique_ptr<ErrorDiffusionDither4Level> errorDither;
 
   uint8_t* grayLineBuffer{nullptr};
   uint8_t* alphaLineBuffer{nullptr};
@@ -266,7 +267,10 @@ void emitBilinearRow(PngContext& ctx, const int dstY, const uint8_t* rowTop, con
   }
 
   const bool useDithering = ctx.config->useDithering;
-  const bool highQualityDithering = ctx.config->highQualityDithering;
+  const ImageDitherMode ditherMode =
+      ctx.config->highQualityDithering && ctx.config->ditherMode == ImageDitherMode::Bayer4x4
+          ? ImageDitherMode::Bayer8x8
+          : ctx.config->ditherMode;
   const int lastX = ctx.visibleWidth > 0 ? ctx.visibleWidth - 1 : 0;
   // Source column advances by a fixed 16.16 step, so no division is needed per
   // pixel (a 64-bit divide per pixel cost more than the interpolation itself).
@@ -302,8 +306,9 @@ void emitBilinearRow(PngContext& ctx, const int dstY, const uint8_t* rowTop, con
     if (alpha < 8 || alpha <= alphaThreshold4x4(outX, outY)) continue;
     uint8_t ditheredGray;
     if (useDithering) {
-      ditheredGray = highQualityDithering ? applyHighQualityDither4Level(sample, outX, outY)
-                                          : applyBayerDither4Level(sample, outX, outY);
+      ditheredGray = ditherMode == ImageDitherMode::ErrorDiffusion && ctx.errorDither
+                         ? ctx.errorDither->process(dstX, dstY, sample)
+                         : applyDither4Level(sample, outX, outY, ditherMode);
     } else {
       const int level = sample / 85;
       ditheredGray = static_cast<uint8_t>(level > 3 ? 3 : level);
@@ -393,6 +398,10 @@ int pngDrawCallback(PNGDRAW* pDraw) {
   int outXBase = ctx->config->x;
   int screenWidth = ctx->screenWidth;
   bool useDithering = ctx->config->useDithering;
+  const ImageDitherMode ditherMode =
+      ctx->config->highQualityDithering && ctx->config->ditherMode == ImageDitherMode::Bayer4x4
+          ? ImageDitherMode::Bayer8x8
+          : ctx->config->ditherMode;
   const bool writeFramebuffer = ctx->config->output == DecodeOutput::FrameBufferAndCache;
 
   // Pre-compute orientation and render-mode state once per callback.
@@ -434,8 +443,9 @@ int pngDrawCallback(PNGDRAW* pDraw) {
 
           uint8_t ditheredGray;
           if (useDithering) {
-            ditheredGray = highQualityDithering ? applyHighQualityDither4Level(gray, outX, outY)
-                                                : applyBayerDither4Level(gray, outX, outY);
+            ditheredGray = ditherMode == ImageDitherMode::ErrorDiffusion && ctx->errorDither
+                               ? ctx->errorDither->process(dstX, dstY, gray)
+                               : applyDither4Level(gray, outX, outY, ditherMode);
           } else {
             ditheredGray = gray >> 6;
           }
@@ -562,6 +572,16 @@ bool PngToFramebufferConverter::decodeToFramebuffer(const std::string& imagePath
   // last column anyway.
   ctx.stepXFP =
       ctx.dstWidth > 0 ? static_cast<int32_t>((static_cast<int64_t>(ctx.visibleWidth) << 16) / ctx.dstWidth) : 0;
+
+  if (config.output != DecodeOutput::NativeGrayscale16 && config.useDithering &&
+      (config.ditherMode == ImageDitherMode::ErrorDiffusion ||
+       (config.highQualityDithering && config.ditherMode == ImageDitherMode::Bayer4x4))) {
+    ctx.errorDither = makeUniqueNoThrow<ErrorDiffusionDither4Level>(ctx.dstWidth);
+    if (!ctx.errorDither || !ctx.errorDither->valid()) {
+      LOG_ERR("PNG", "Failed to allocate image dither state (%d pixels)", ctx.dstWidth);
+      return false;
+    }
+  }
 
   const int pixelType = png->getPixelType();
   const int bitsPerSample = png->getBpp();

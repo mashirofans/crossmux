@@ -27,7 +27,7 @@
 ImageBlock::ImageBlock(const std::string&, const std::string&, int16_t, int16_t) : width(0), height(0) {}
 void ImageBlock::releaseRenderCache() {}
 void ImageBlock::clearSessionRenderFailures() {}
-void ImageBlock::setGrayscaleSimulation(bool) {}
+void ImageBlock::setGrayscaleSimulation(ImageDitherMode) {}
 bool ImageBlock::render(GfxRenderer&, int, int, PixelCachePolicy) { return false; }
 
 bool FontCacheManager::isScanning() const { return false; }

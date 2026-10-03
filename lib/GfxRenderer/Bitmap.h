@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "BitmapHelpers.h"
+#include "../Epub/Epub/converters/DitherUtils.h"
 
 #pragma pack(push, 1)
 struct BmpHeader {
@@ -74,13 +75,20 @@ class Bitmap {
   static const char* errorToString(BmpReaderError err);
 
   explicit Bitmap(HalFile& file, bool dithering = false, bool originalThresholds = false)
-      : file(&file), dithering(dithering), originalThresholds(originalThresholds) {}
+      : file(&file), ditherMode(dithering ? ImageDitherMode::ErrorDiffusion : ImageDitherMode::None),
+        legacyDithering(dithering), originalThresholds(originalThresholds) {}
+  Bitmap(HalFile& file, ImageDitherMode mode, bool originalThresholds = false)
+      : file(&file), ditherMode(mode), originalThresholds(originalThresholds) {}
 #if defined(BOARD_HAS_PSRAM) || defined(CROSSPOINT_EMULATED)
   // Non-owning memory source. The caller must keep `data` alive for the
   // Bitmap's lifetime; sequential rows are copied into the existing internal
   // draw scratch before pixel processing.
   Bitmap(const uint8_t* data, size_t size, bool dithering = false)
-      : memoryData(data), memorySize(size), dithering(dithering) {}
+      : memoryData(data), memorySize(size), ditherMode(dithering ? ImageDitherMode::ErrorDiffusion
+                                                                  : ImageDitherMode::None),
+        legacyDithering(dithering) {}
+  Bitmap(const uint8_t* data, size_t size, ImageDitherMode mode)
+      : memoryData(data), memorySize(size), ditherMode(mode) {}
 #endif
   ~Bitmap();
   Bitmap(const Bitmap&) = delete;
@@ -116,7 +124,8 @@ class Bitmap {
   size_t memorySize = 0;
   mutable size_t memoryPosition = 0;
 #endif
-  bool dithering = false;
+  ImageDitherMode ditherMode = ImageDitherMode::None;
+  bool legacyDithering = false;
   bool originalThresholds = false;
   int width = 0;
   int height = 0;

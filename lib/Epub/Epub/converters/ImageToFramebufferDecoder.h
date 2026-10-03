@@ -5,6 +5,8 @@
 #include <memory>
 #include <string>
 
+#include "DitherUtils.h"
+
 class GfxRenderer;
 
 struct ImageDimensions {
@@ -32,8 +34,11 @@ struct RenderConfig {
   // behaviour, one source pixel per output pixel), true = bilinear blend of the
   // source neighbourhood. Callers that must keep the cheap path leave it false.
   bool bilinearScaling = false;
-  // Use the finer 8x8 ordered dither when reducing 8-bit samples to the
-  // display's four 2-bit levels. NativeGrayscale16 output bypasses this.
+  // Reduction algorithm for 8-bit samples to the display's four 2-bit levels.
+  // NativeGrayscale16 output bypasses this.
+  ImageDitherMode ditherMode = ImageDitherMode::Bayer4x4;
+  // Compatibility with callers from before ditherMode. true upgrades the
+  // default Bayer4x4 path to the historical high-quality 8x8 path.
   bool highQualityDithering = false;
   std::string cachePath;  // If non-empty, decoder will write pixel cache to this path
   DecodeOutput output = DecodeOutput::FrameBufferAndCache;

@@ -352,9 +352,15 @@ inline const std::vector<SettingInfo>& getBaseSettingsList() {
         SettingInfo::Enum(StrId::STR_IMAGE_SCALING, &CrossPointSettings::imageScaling,
                           {StrId::STR_IMAGE_SCALING_NEAREST, StrId::STR_IMAGE_SCALING_BILINEAR}, "imageScaling",
                           StrId::STR_CAT_READER),
-        SettingInfo::Toggle(StrId::STR_IMAGE_GRAYSCALE_SIMULATION,
-                            &CrossPointSettings::imageGrayscaleSimulation, "imageGrayscaleSimulation",
-                            StrId::STR_CAT_READER),
+        // Keep the numeric order stable: value 1 was the original boolean
+        // "256-level" option and maps to 8x8 Bayer. New algorithms append
+        // values so existing JSON settings continue to render identically.
+        SettingInfo::Enum(
+            StrId::STR_IMAGE_GRAYSCALE_SIMULATION, &CrossPointSettings::imageGrayscaleSimulation,
+            {StrId::STR_IMAGE_GRAYSCALE_OFF, StrId::STR_IMAGE_GRAYSCALE_BAYER_8X8,
+             StrId::STR_IMAGE_GRAYSCALE_BAYER_4X4, StrId::STR_IMAGE_GRAYSCALE_ERROR_DIFFUSION,
+             StrId::STR_IMAGE_GRAYSCALE_RANDOM},
+            "imageGrayscaleSimulation", StrId::STR_CAT_READER),
         SettingInfo::Toggle(StrId::STR_UI_ANTI_ALIASING, &CrossPointSettings::uiAntiAliasing, "uiAntiAliasing",
                             StrId::STR_CAT_READER),
         SettingInfo::Toggle(StrId::STR_NIGHT_MODE, &CrossPointSettings::screenInverted, "screenInverted",
