@@ -349,6 +349,7 @@ void ReadingStatsActivity::selectMainTabContentEdge(const MainTabContentEdge edg
 
 void ReadingStatsActivity::onEnter() {
   Activity::onEnter();
+  READING_STATS.pruneMissingBooks();
   if (!usesInxLayout()) renderer.requestNextRefresh(HalDisplay::HALF_REFRESH);
   selectedIndex = usesInxLayout() ? 0 : (READING_STATS.getBooks().empty() ? 0 : 1);
   waitForConfirmRelease = mappedInput.isPressed(MappedInputManager::Button::Confirm);
@@ -528,8 +529,7 @@ void ReadingStatsActivity::guardBackReturn() {
 }
 
 void ReadingStatsActivity::prepareVisibleCover() {
-  if (waitingForCoverRender || !renderedCoverMissing || renderedCoverView != selectedIndex ||
-      attemptedCoverView == selectedIndex)
+  if (waitingForCoverRender || !renderedCoverMissing || attemptedCoverView == selectedIndex)
     return;
 
   const auto& books = READING_STATS.getBooks();

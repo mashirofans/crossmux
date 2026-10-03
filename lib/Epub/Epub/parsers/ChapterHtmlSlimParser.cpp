@@ -1036,7 +1036,7 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
           const bool recognised = sniffedExtension != nullptr || ImageDecoderFactory::isFormatSupported(resolvedPath);
 
           if (!recognised) {
-            LOG_ERR("EHP", "Unsupported image entry (neither JPEG/PNG content nor a known extension): %s",
+            LOG_ERR("EHP", "Unsupported image entry (not JPEG/PNG/BMP content or a known extension): %s",
                     resolvedPath.c_str());
           } else {
             // Create a unique filename for the cached image. Prefer the sniffed

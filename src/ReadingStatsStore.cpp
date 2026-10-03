@@ -542,9 +542,18 @@ void ReadingStatsStore::rebuildAggregatedReadingDays() {
 }
 
 bool ReadingStatsStore::removeIgnoredBooks() {
+  // A temporary unmounted card must not make every book look deleted. The
+  // stats file is kept on the same volume, but this guard also protects the
+  // explicit onEnter() pruning pass during SD reconnect/startup.
+  if (!Storage.ready()) return false;
   const size_t originalCount = books.size();
   books.erase(std::remove_if(books.begin(), books.end(),
-                             [](const ReadingBookStats& book) { return shouldIgnorePath(book.path); }),
+                             [](const ReadingBookStats& book) {
+                               if (shouldIgnorePath(book.path)) return true;
+                               if (Storage.exists(book.path.c_str())) return false;
+                               return std::none_of(book.knownPaths.begin(), book.knownPaths.end(),
+                                                   [](const std::string& path) { return Storage.exists(path.c_str()); });
+                             }),
               books.end());
   return books.size() != originalCount;
 }
@@ -1120,7 +1129,7 @@ bool ReadingStatsStore::loadFromFile() {
     const bool needsSave = dirty;
     normalizeReadingDays(readingDays);
     normalizeBooks();
-    removeIgnoredBooks();
+    const bool removedBooks = removeIgnoredBooks();
     rebuildAggregatedReadingDays();
     const uint32_t latestKnownTimestamp = getLatestKnownTimestamp();
     if (!isClockValid(APP_STATE.lastKnownValidTimestamp) && isClockValid(latestKnownTimestamp)) {
@@ -1134,7 +1143,7 @@ bool ReadingStatsStore::loadFromFile() {
                        sessionLog.begin() + static_cast<std::ptrdiff_t>(sessionLog.size() - MAX_SESSION_LOG_ENTRIES));
     }
     invalidateSummaryCache();
-    if (needsSave) {
+    if (needsSave || removedBooks) {
       markDirty();
       saveToFile();
     } else {
@@ -1144,6 +1153,14 @@ bool ReadingStatsStore::loadFromFile() {
     }
   }
   return loaded;
+}
+
+bool ReadingStatsStore::pruneMissingBooks() {
+  const bool removedBooks = removeIgnoredBooks();
+  if (!removedBooks) return false;
+  rebuildAggregatedReadingDays();
+  markDirty();
+  return saveToFile();
 }
 
 bool ReadingStatsStore::releaseMemoryForNetwork() {

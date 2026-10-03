@@ -139,6 +139,9 @@ class EpubReaderActivity final : public ReaderActivity {
   // overlay, letting panel->toolbar steps restore the page without a full
   // re-render. Discarded on close / whenever the page under the overlay changes.
   bool overlayPageStored = false;
+  // The first toolbar paint after opening must clean the previous activity's
+  // chrome; later panel switches can stay on FAST.
+  bool overlayCleanRefreshPending = false;
   // True while a deferred overlay chrome refresh (pushOverlayRefresh) may still
   // be running on the panel. settleOverlayRefresh() must run before the
   // framebuffer is touched or another differential refresh is pushed.

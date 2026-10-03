@@ -175,6 +175,9 @@ class ReadingStatsStore {
   bool shouldSaveCheckpoint() const;
   bool saveToFile() const;
   bool loadFromFile();
+  // Drop entries whose book path and all known aliases no longer exist.
+  // Returns true when the in-memory aggregate changed and was persisted.
+  bool pruneMissingBooks();
   bool releaseMemoryForNetwork();
   bool reloadAfterNetwork();
 };

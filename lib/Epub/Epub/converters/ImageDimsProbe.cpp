@@ -9,6 +9,11 @@ bool isJpegSof(const uint8_t marker) {
   return marker >= 0xC0 && marker <= 0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC;
 }
 constexpr uint8_t PNG_SIG[8] = {0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
+
+uint32_t readLe32(const uint8_t* bytes) {
+  return static_cast<uint32_t>(bytes[0]) | (static_cast<uint32_t>(bytes[1]) << 8) |
+         (static_cast<uint32_t>(bytes[2]) << 16) | (static_cast<uint32_t>(bytes[3]) << 24);
+}
 }  // namespace
 
 bool ImageDimsProbe::feed(const uint8_t b) {
@@ -25,6 +30,9 @@ bool ImageDimsProbe::feed(const uint8_t b) {
         state = State::JpegSoi;
       } else if (b == PNG_SIG[0]) {
         state = State::PngHeader;
+      } else if (b == 'B') {
+        state = State::BmpHeader;
+        bmpHeader[0] = b;
       } else {
         state = State::Failed;
         return false;
@@ -58,6 +66,27 @@ bool ImageDimsProbe::feed(const uint8_t b) {
       }
       pos++;
       return true;
+
+    case State::BmpHeader:
+      bmpHeader[pos++] = b;
+      if (pos < sizeof(bmpHeader)) return true;
+      if (bmpHeader[1] != 'M' || readLe32(bmpHeader + 14) < 40) {
+        state = State::Failed;
+        return false;
+      }
+      {
+        const int32_t bmpWidth = static_cast<int32_t>(readLe32(bmpHeader + 18));
+        const int32_t bmpHeight = static_cast<int32_t>(readLe32(bmpHeader + 22));
+        if (bmpWidth <= 0 || bmpHeight == 0 || bmpHeight == INT32_MIN) {
+          state = State::Failed;
+          return false;
+        }
+        width = static_cast<uint32_t>(bmpWidth);
+        height = static_cast<uint32_t>(bmpHeight < 0 ? -bmpHeight : bmpHeight);
+      }
+      format = Format::Bmp;
+      state = State::Done;
+      return false;
 
     case State::JpegSoi:
       if (b != 0xD8) {

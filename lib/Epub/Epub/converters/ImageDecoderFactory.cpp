@@ -8,9 +8,11 @@
 
 #include "JpegToFramebufferConverter.h"
 #include "PngToFramebufferConverter.h"
+#include "BmpToFramebufferConverter.h"
 
 std::unique_ptr<JpegToFramebufferConverter> ImageDecoderFactory::jpegDecoder = nullptr;
 std::unique_ptr<PngToFramebufferConverter> ImageDecoderFactory::pngDecoder = nullptr;
+std::unique_ptr<BmpToFramebufferConverter> ImageDecoderFactory::bmpDecoder = nullptr;
 
 ImageToFramebufferDecoder* ImageDecoderFactory::getDecoder(const std::string& imagePath) {
   std::string ext = imagePath;
@@ -42,6 +44,15 @@ ImageToFramebufferDecoder* ImageDecoderFactory::getDecoder(const std::string& im
       }
     }
     return pngDecoder.get();
+  } else if (BmpToFramebufferConverter::supportsFormat(ext)) {
+    if (!bmpDecoder) {
+      bmpDecoder = makeUniqueNoThrow<BmpToFramebufferConverter>();
+      if (!bmpDecoder) {
+        LOG_ERR("DEC", "OOM creating BMP decoder");
+        return nullptr;
+      }
+    }
+    return bmpDecoder.get();
   }
 
   LOG_ERR("DEC", "No decoder found for image: %s", imagePath.c_str());

@@ -153,6 +153,15 @@ TEST(ZipImageProbe, SignsAFormatOnlyOnceItsSignatureIsValidated) {
   // The shortest complete JPEG signature, and the full PNG one.
   EXPECT_EQ(formatOf({0xFF, 0xD8}), ImageDimsProbe::Format::Jpeg);
   EXPECT_EQ(formatOf({0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}), ImageDimsProbe::Format::Png);
+
+  std::vector<uint8_t> bmp(26, 0);
+  bmp[0] = 'B';
+  bmp[1] = 'M';
+  bmp[14] = 40;  // BITMAPINFOHEADER
+  bmp[18] = 0x40;
+  bmp[22] = 0xF0;
+  bmp[23] = 0x00;
+  EXPECT_EQ(formatOf(bmp), ImageDimsProbe::Format::Bmp);
 }
 
 TEST(ZipImageProbe, RejectsTruncatedDeflateStream) {

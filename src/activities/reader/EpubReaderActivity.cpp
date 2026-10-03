@@ -3076,6 +3076,7 @@ void EpubReaderActivity::pushOverlayRefresh() {
     renderer.restoreBwBuffer(/*resyncPanelBaseline=*/false);
     if (renderer.storeBwBuffer()) {
       uiAa::display(renderer, [this] { renderOverlay(); });
+      overlayCleanRefreshPending = false;
       return;
     }
     // If the temporary BW snapshot cannot be allocated, keep the readable
@@ -3083,11 +3084,14 @@ void EpubReaderActivity::pushOverlayRefresh() {
     renderOverlay();
   }
 
+  const HalDisplay::RefreshMode refreshMode = overlayCleanRefreshPending ? HalDisplay::HALF_REFRESH
+                                                                           : HalDisplay::FAST_REFRESH;
+  overlayCleanRefreshPending = false;
   if (renderer.supportsAsyncRefresh()) {
-    renderer.displayBufferAsync(HalDisplay::FAST_REFRESH);
+    renderer.displayBufferAsync(refreshMode);
     overlayRefreshPending = true;
   } else {
-    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+    renderer.displayBuffer(refreshMode);
   }
 }
 
@@ -3106,6 +3110,7 @@ void EpubReaderActivity::openOverlay(Overlay target) {
   mappedInput.resetHomeButtonInput();
   const Overlay previous = overlay;
   overlay = target;
+  if (previous == Overlay::None) overlayCleanRefreshPending = true;
   if (!toolbarUi) toolbarUi = makeUniqueNoThrow<ReaderToolbarUi>(renderer);
   if (!toolbarUi) {
     LOG_ERR("ERS", "OOM allocating reader toolbar");
@@ -3141,30 +3146,27 @@ void EpubReaderActivity::openOverlay(Overlay target) {
   }
   panelHoldJumped = false;
 
-  // The page is already on screen and still in the framebuffer, so paint the
-  // chrome straight onto it and push one refresh. requestUpdate() would
-  // re-render the whole page first: slow, and visibly wrong, since that repaint
-  // lands before the overlay does.
+  // The first toolbar open takes a complete reader render so it cannot inherit
+  // chrome from the activity that launched the book. Once the toolbar is open,
+  // panel switches paint over the stored page snapshot and use one fast refresh.
   if (section) {
+    if (previous == Overlay::None) {
+      // The first center tap can arrive while the page activation is still
+      // asynchronous. Re-render the complete reader frame before painting the
+      // toolbar so no navigation chrome from the previous activity survives
+      // outside the sheet. Subsequent toolbar/panel switches can use the fast
+      // snapshot path below.
+      renderer.waitRefreshComplete();
+      discardOverlayPage();
+      requestUpdate();
+      return;
+    }
     // Serialize against the render task: renderBook may be mid-page (status
     // bar included) in the shared framebuffer, and painting the chrome from
     // the loop task at the same time interleaves the two frames.
     RenderLock lock;
     settleOverlayRefresh();
-    if (previous == Overlay::None) {
-      // Snapshot the clean page so stepping back from a panel to the toolbar
-      // (and closing, where supported) can restore it without a re-render.
-      overlayPageStored = renderer.storeBwBuffer();
-#if FREEINK_DEVICE_EEGO_A4
-      // The page under the chrome is a grayscale AA frame: its gray MSB plane
-      // (DTM1) survives in the controller RAM and ghosts through the overlay
-      // even after a full waveform (only DTM2 is rewritten). Write the BW page
-      // into both planes so the chrome opens over a clean B/W state — the
-      // frontlight panel's "refresh and become B/W" handoff. The close path
-      // re-renders the AA page to restore the gray look.
-      renderer.cleanupGrayscaleWithFrameBuffer();
-#endif
-    } else if (overlayPageStored) {
+    if (overlayPageStored) {
       // Overlay -> overlay: wipe the previous chrome (toolbar header, sheet,
       // progress row) back to the clean page so none of it shows around or
       // through the new sheet; re-store for the next transition. No baseline
@@ -3186,6 +3188,7 @@ void EpubReaderActivity::openOverlay(Overlay target) {
 void EpubReaderActivity::closeOverlayToPage() {
   mappedInput.resetHomeButtonInput();
   overlay = Overlay::None;
+  overlayCleanRefreshPending = false;
   overlayPopup.dismiss();  // an option picker cannot outlive its panel
   toolbarUi.reset();       // ~1 KB of interaction table + props, only needed while open
   // A panel row toggled in place (image scaling) applies here and only here:

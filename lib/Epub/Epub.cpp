@@ -20,7 +20,7 @@
 #include "Epub/parsers/TocNcxParser.h"
 
 namespace {
-enum class CoverImageType : uint8_t { None, Jpeg, Png };
+enum class CoverImageType : uint8_t { None, Jpeg, Png, Bmp };
 
 CoverImageType coverImageType(const std::string& path) {
   HalFile file;
@@ -31,7 +31,32 @@ CoverImageType coverImageType(const std::string& path) {
   }
   static constexpr uint8_t kPngMagic[] = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
   if (memcmp(prefix, kPngMagic, sizeof(kPngMagic)) == 0) return CoverImageType::Png;
-  return prefix[0] == 0xFF && prefix[1] == 0xD8 && prefix[2] == 0xFF ? CoverImageType::Jpeg : CoverImageType::None;
+  if (prefix[0] == 'B' && prefix[1] == 'M') return CoverImageType::Bmp;
+  return prefix[0] == 0xFF && prefix[1] == 0xD8 && prefix[2] == 0xFF ? CoverImageType::Jpeg
+                                                                        : CoverImageType::None;
+}
+
+bool copyFile(const std::string& sourcePath, const std::string& outputPath, const char* outputKind) {
+  HalFile source;
+  HalFile output;
+  if (!Storage.openFileForRead("EBP", sourcePath, source) ||
+      !Storage.openFileForWrite("EBP", outputPath, output)) {
+    LOG_ERR("EBP", "Failed to open BMP source/output for %s", outputKind);
+    Storage.remove(outputPath.c_str());
+    return false;
+  }
+  uint8_t buffer[1024];
+  for (;;) {
+    const int count = source.read(buffer, sizeof(buffer));
+    if (count < 0 ||
+        (count > 0 && output.write(buffer, static_cast<size_t>(count)) != static_cast<size_t>(count))) {
+      LOG_ERR("EBP", "Failed to copy BMP for %s", outputKind);
+      Storage.remove(outputPath.c_str());
+      return false;
+    }
+    if (count == 0) break;
+  }
+  return true;
 }
 
 template <typename JpegConvert, typename PngConvert>
@@ -59,23 +84,25 @@ bool convertCoverFile(const std::string& sourcePath, const CoverImageType type, 
 template <typename JpegConvert, typename PngConvert>
 bool convertExtractedCover(const Epub& epub, const std::string& coverHref, const std::string& outputPath,
                            const char* outputKind, JpegConvert jpegConvert, PngConvert pngConvert) {
-  const bool isJpeg = FsHelpers::hasJpgExtension(coverHref);
-  const std::string tempPath = epub.getCachePath() + (isJpeg ? "/.cover.jpg" : "/.cover.png");
+  const std::string tempPath = epub.getCachePath() + "/.cover.image";
 
   if (!epub.extractItemToFile(coverHref, tempPath)) {
     LOG_ERR("EBP", "Failed to extract cover image for %s", outputKind);
     return false;
   }
   const ScopedCleanup removeTemp{[&tempPath] { Storage.remove(tempPath.c_str()); }};
-  return convertCoverFile(tempPath, isJpeg ? CoverImageType::Jpeg : CoverImageType::Png, outputPath, outputKind,
-                          jpegConvert, pngConvert);
+  const CoverImageType type = coverImageType(tempPath);
+  if (type == CoverImageType::Bmp) return copyFile(tempPath, outputPath, outputKind);
+  return convertCoverFile(tempPath, type, outputPath, outputKind, jpegConvert, pngConvert);
 }
 
 template <typename JpegConvert, typename PngConvert>
 bool convertOverrideCover(const Epub& epub, const std::string& outputPath, const char* outputKind,
                           JpegConvert jpegConvert, PngConvert pngConvert) {
   const std::string sourcePath = epub.getCoverOverridePath();
-  return convertCoverFile(sourcePath, coverImageType(sourcePath), outputPath, outputKind, jpegConvert, pngConvert);
+  const CoverImageType type = coverImageType(sourcePath);
+  if (type == CoverImageType::Bmp) return copyFile(sourcePath, outputPath, outputKind);
+  return convertCoverFile(sourcePath, type, outputPath, outputKind, jpegConvert, pngConvert);
 }
 }  // namespace
 
@@ -192,9 +219,9 @@ bool Epub::parseContentOpf(BookMetadataCache::BookMetadata& bookMetadata, const 
           const auto endPos = coverPageHtml.find('"', pos);
           if (endPos != std::string::npos) {
             const auto ref = std::string_view{coverPageHtml}.substr(pos, endPos - pos);
-            // Cover BMP generation supports JPG/PNG only; skip GIF so an unsupported wrapper image
+            // Cover BMP generation supports JPG/PNG/BMP only; skip GIF/SVG so an unsupported wrapper image
             // does not block a later supported cover reference.
-            if (FsHelpers::hasPngExtension(ref) || FsHelpers::hasJpgExtension(ref)) {
+            if (FsHelpers::hasPngExtension(ref) || FsHelpers::hasJpgExtension(ref) || FsHelpers::hasBmpExtension(ref)) {
               imageRef = ref;
               break;
             }
@@ -816,7 +843,12 @@ bool Epub::generateCoverBmp(bool cropped, bool originalThresholds) const {
   }
 
   const auto coverImageHref = bookMetadataCache->coreMetadata.coverItemHref;
-  if (FsHelpers::hasJpgExtension(coverImageHref) || FsHelpers::hasPngExtension(coverImageHref)) {
+  if (!coverImageHref.empty()) {
+    // The href extension is only a hint. EPUB packages in the wild often omit
+    // it or use an uppercase/misleading suffix while the payload is still a
+    // regular JPEG/PNG. convertExtractedCover() sniffs the extracted bytes, so
+    // letting it try every non-empty cover href fixes those covers without
+    // accepting unsupported formats such as animated GIF or SVG as decodable.
     const std::string outputPath = getCoverBmpPath(cropped, originalThresholds);
     if (convertExtractedCover(
             *this, coverImageHref, outputPath, cropped ? "cropped cover" : "cover",
@@ -913,7 +945,10 @@ bool Epub::generateThumbBmpForCover(int height, const std::string& coverImageHre
     return Txt::convertCoverImageToBmp(coverImageHref, getThumbBmpPath(height), height);
   }
 
-  if (FsHelpers::hasJpgExtension(coverImageHref) || FsHelpers::hasPngExtension(coverImageHref)) {
+  if (!coverImageHref.empty()) {
+    // As with the full-size cover, sniff the extracted bytes rather than
+    // requiring a .jpg/.png suffix. This also covers EPUB entries whose href
+    // has no extension but whose payload is a supported static raster.
     if (convertExtractedCover(
             *this, coverImageHref, outputPath, "thumbnail",
             [targetWidth, height](HalFile& source, HalFile& output) {
