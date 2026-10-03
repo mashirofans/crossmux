@@ -398,8 +398,9 @@ void ImageBlock::render(GfxRenderer& renderer, const int x, const int y) {
   (void)render(renderer, x, y, PixelCachePolicy::LoadIntoRam);
 }
 
-bool ImageBlock::render(GfxRenderer& renderer, const int x, const int y, const PixelCachePolicy cachePolicy) {
-  return renderInternal(renderer, x, y, cachePolicy, DecodeOutput::FrameBufferAndCache);
+bool ImageBlock::render(GfxRenderer& renderer, const int x, const int y, const PixelCachePolicy cachePolicy,
+                        ImageRenderError* error) {
+  return renderInternal(renderer, x, y, cachePolicy, DecodeOutput::FrameBufferAndCache, error);
 }
 
 bool ImageBlock::cacheDecodedImage(GfxRenderer& renderer, const int x, const int y) {
@@ -407,7 +408,9 @@ bool ImageBlock::cacheDecodedImage(GfxRenderer& renderer, const int x, const int
 }
 
 bool ImageBlock::renderInternal(GfxRenderer& renderer, const int x, const int y, const PixelCachePolicy cachePolicy,
-                                const DecodeOutput output) {
+                                const DecodeOutput output, ImageRenderError* error) {
+  ImageRenderError decodeError = ImageRenderError::Failed;
+  if (error) *error = ImageRenderError::Failed;
   const bool renderToFramebuffer = output == DecodeOutput::FrameBufferAndCache;
 
   // The font-prewarm scan pass only accumulates glyphs; an image contributes
@@ -416,7 +419,10 @@ bool ImageBlock::renderInternal(GfxRenderer& renderer, const int x, const int y,
   // page view. Skip it here. The image still draws in the real BW/grayscale
   // passes; on first view this just moves the one-time decode to the BW pass.
   FontCacheManager* fcm = renderer.getFontCacheManager();
-  if (renderToFramebuffer && fcm && fcm->isScanning()) return true;
+  if (renderToFramebuffer && fcm && fcm->isScanning()) {
+    if (error) *error = ImageRenderError::None;
+    return true;
+  }
 
   LOG_DBG("IMG", "Rendering image at %d,%d: %s (%dx%d)", x, y, imagePath.c_str(), width, height);
 
@@ -437,6 +443,7 @@ bool ImageBlock::renderInternal(GfxRenderer& renderer, const int x, const int y,
   // is orientation-aware and returns true when no strip is active, so the BW
   // pass and non-tiled controllers render the image exactly as before.
   if (renderToFramebuffer && !renderer.glyphIntersectsStrip(x, y, x + width - 1, y + height - 1)) {
+    if (error) *error = ImageRenderError::None;
     return true;
   }
 
@@ -448,9 +455,11 @@ bool ImageBlock::renderInternal(GfxRenderer& renderer, const int x, const int y,
   // Try to render from cache first
   std::string cachePath = getCachePath(imagePath);
   if (renderToFramebuffer && renderFromCache(renderer, cachePath, x, y, width, height, cachePolicy)) {
+    if (error) *error = ImageRenderError::None;
     return true;
   }
   if (!renderToFramebuffer && hasValidCache()) {
+    if (error) *error = ImageRenderError::None;
     return true;
   }
 
@@ -497,6 +506,7 @@ bool ImageBlock::renderInternal(GfxRenderer& renderer, const int x, const int y,
   config.output = output;
   config.bilinearScaling = bilinearScalingEnabled();
   config.ditherMode = grayscaleSimulationMode();
+  config.error = &decodeError;
 
   ImageToFramebufferDecoder* decoder = ImageDecoderFactory::getDecoder(imagePath);
   if (!decoder) {
@@ -511,12 +521,14 @@ bool ImageBlock::renderInternal(GfxRenderer& renderer, const int x, const int y,
   bool success = decoder->decodeToFramebuffer(imagePath, renderer, config);
   if (!success) {
     LOG_ERR("IMG", "Failed to decode image: %s", imagePath.c_str());
-    rememberImageFailure(imagePath);
+    if (error) *error = decodeError;
+    if (decodeError != ImageRenderError::OutOfMemory) rememberImageFailure(imagePath);
     if (renderToFramebuffer) renderPlaceholder(renderer, x, y);
     return false;
   }
 
   LOG_DBG("IMG", "Decode successful");
+  if (error) *error = ImageRenderError::None;
   return true;
 }
 

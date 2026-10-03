@@ -40,6 +40,7 @@ def main():
       SLEEP_SCREEN_COVER_MODE sleepScreenCoverMode = SLEEP_SCREEN_COVER_MODE::FIT;
       SLEEP_SCREEN_COVER_FILTER sleepScreenCoverFilter = SLEEP_SCREEN_COVER_FILTER::NO_FILTER;
       uint8_t sleepScreen = LIGHT;
+      uint8_t imageGrayscaleSimulation = 0;
       int failedSaves = 0;
       bool saveToFile() { if (failedSaves > 0) { --failedSaves; return false; } return true; }
       static CrossPointSettings& getInstance() { static CrossPointSettings value; return value; }
@@ -73,7 +74,7 @@ def main():
     """
         (work / 'SleepProbe.h').write_text(probe + placement +
             (custom + bitmap_sleep).replace('SleepActivity::', 'SleepProbe::'))
-        includes = [work, JPEG, SIM / 'src', ROOT / 'lib/GfxRenderer', ROOT / 'lib/EpdFont',
+        includes = [work, JPEG, SIM / 'src', ROOT / 'lib/hal', ROOT / 'lib/GfxRenderer', ROOT / 'lib/EpdFont',
                     ROOT / 'lib/Epub', ROOT / 'lib/Memory', ROOT / 'lib/Utf8', ROOT / 'lib/MiniBidi',
                     ROOT / 'lib/InflateReader', ROOT / 'lib/ZipFile', ROOT / 'lib/Serialization',
                     ROOT / 'lib/uzlib/src', ROOT / 'lib/FsHelpers', ROOT / 'lib/JpegToBmpConverter', ROOT / 'src', ROOT / 'src/activities/apps/airpage']

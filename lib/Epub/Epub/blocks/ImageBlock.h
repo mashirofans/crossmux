@@ -64,7 +64,7 @@ class ImageBlock final : public Block {
   bool isEmpty() override { return false; }
 
   void render(GfxRenderer& renderer, const int x, const int y);
-  bool render(GfxRenderer& renderer, int x, int y, PixelCachePolicy cachePolicy);
+  bool render(GfxRenderer& renderer, int x, int y, PixelCachePolicy cachePolicy, ImageRenderError* error = nullptr);
   bool cacheDecodedImage(GfxRenderer& renderer, int x, int y);
   bool serialize(HalFile& file);
   static std::unique_ptr<ImageBlock> deserialize(HalFile& file);
@@ -80,5 +80,6 @@ class ImageBlock final : public Block {
   static bool bilinearScaling;  // reader-pushed resampling filter
   static ImageDitherMode grayscaleSimulation;
 
-  bool renderInternal(GfxRenderer& renderer, int x, int y, PixelCachePolicy cachePolicy, DecodeOutput output);
+  bool renderInternal(GfxRenderer& renderer, int x, int y, PixelCachePolicy cachePolicy, DecodeOutput output,
+                      ImageRenderError* error = nullptr);
 };

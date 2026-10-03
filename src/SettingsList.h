@@ -363,8 +363,6 @@ inline const std::vector<SettingInfo>& getBaseSettingsList() {
             "imageGrayscaleSimulation", StrId::STR_CAT_READER),
         SettingInfo::Toggle(StrId::STR_UI_ANTI_ALIASING, &CrossPointSettings::uiAntiAliasing, "uiAntiAliasing",
                             StrId::STR_CAT_READER),
-        SettingInfo::Toggle(StrId::STR_NIGHT_MODE, &CrossPointSettings::screenInverted, "screenInverted",
-                            StrId::STR_CAT_READER),
         SettingInfo::Enum(StrId::STR_READER_MENU_STYLE, &CrossPointSettings::readerMenuStyle,
                           {StrId::STR_MENU_STYLE_LIST, StrId::STR_MENU_STYLE_TOOLBAR}, "readerMenuStyle",
                           StrId::STR_CAT_READER),

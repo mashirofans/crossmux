@@ -172,6 +172,8 @@ add_test(NAME LegacyThemeListGeometry COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}
 
 add_test(NAME InxSettingControls COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/test/inx_navigation/test_inx_setting_controls.py)
 
+add_test(NAME SettingsApiKeys COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/test/settings_api/test_settings_api_keys.py)
+
 add_test(NAME HalTiltGestures
   COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/test/hal_tilt/test_hal_tilt.py)
 
@@ -195,5 +197,6 @@ add_test(NAME WifiStartupFailure COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/scri
 add_test(NAME FontPreloadFlow
   COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/test/reader_font_preview/test_preload_flow.py)
 add_test(NAME TlsMemoryPreflight COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/scripts/tests/test_tls_memory_preflight.py)
+add_test(NAME AirPageDisplayRetry COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/scripts/tests/test_airpage_display_retry.py)
 
 add_test(NAME FontPreloadRefresh COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/scripts/tests/test_font_preload_refresh.py)
